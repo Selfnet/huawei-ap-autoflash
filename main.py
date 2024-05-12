@@ -8,11 +8,11 @@ import argparse
 import ipaddress
 
 
-PROMPT_STOP_AUTOBOOT = "Press f or F  to stop Auto-Boot"
-PROMPT_SKIP_BUS_TEST = "Press j or J to stop Bus-Test"
-PROMPT_PASSWORD = "Password for uboot cmd line :"
-PROMPT_UBOOT_READY = "ar7240>"
-PROMPT_OPENWRT_LAN_READY = "br-lan: link becomes ready"
+PROMPT_STOP_AUTOBOOT = r"Press f or F  to stop Auto-Boot"
+PROMPT_SKIP_BUS_TEST = r"Press j or J to stop Bus-Test"
+PROMPT_PASSWORD = r"Password for uboot cmd line :"
+PROMPT_UBOOT_READY = r"ar7240>"
+PROMPT_OPENWRT_SHELL = r"root@\S+:/#"
 
 
 def parse_args():
@@ -78,7 +78,14 @@ def ensure_uboot_ready(ser, password):
     for _ in range(4):
         m = wait_for_prompt_match(
             ser,
-            f"{PROMPT_STOP_AUTOBOOT}|{PROMPT_PASSWORD}|{PROMPT_UBOOT_READY}|{PROMPT_SKIP_BUS_TEST}",
+            "|".join(
+                [
+                    PROMPT_STOP_AUTOBOOT,
+                    PROMPT_PASSWORD,
+                    PROMPT_UBOOT_READY,
+                    PROMPT_SKIP_BUS_TEST,
+                ]
+            ),
         )
         if m == PROMPT_SKIP_BUS_TEST:
             time.sleep(0.2)
@@ -98,9 +105,10 @@ def ensure_uboot_ready(ser, password):
     logging.info("U-Boot ready")
 
 
-def send_uboot_cmd(ser, cmd: str):
+def send_uboot_cmd(ser, cmd: str, wait_for_prompt=True):
     ser.write(f"{cmd}\n".encode("utf-8"))
-    wait_for_prompt_match(ser, PROMPT_UBOOT_READY)
+    if wait_for_prompt:
+        wait_for_prompt_match(ser, PROMPT_UBOOT_READY)
 
 
 def configure_ramboot(
@@ -112,12 +120,33 @@ def configure_ramboot(
 
 
 def run_ramboot(ser):
-    send_uboot_cmd(ser, "run ramboot")
+    send_uboot_cmd(ser, "run ramboot", wait_for_prompt=False)
 
 
-def wait_for_openwrt_ready(ser):
-    wait_for_prompt_match(ser, PROMPT_OPENWRT_LAN_READY)
-    logging.info("OpenWRT ready")
+def wait_for_openwrt_shell_ready(ser):
+    for _ in range(100):
+        ser.write(b"\n")
+        time.sleep(1)
+        read = ser.read(ser.inWaiting()).decode("utf-8", errors="ignore")
+        if logging.getLogger().level == logging.DEBUG:
+            print(read, end="")
+            sys.stdout.flush()
+        if re.search(PROMPT_OPENWRT_SHELL, read):
+            print()
+            logging.info("OpenWRT shell ready")
+            return
+
+    raise Exception("Timeout waiting for OpenWrt shell ready")
+
+
+def wait_for_openwrt_lan_ready(ser):
+    # Bash oneliner that waits until the output of the command `ip link show br-lan` contains "br-lan"
+    ser.write(b'while ! ip link show br-lan | grep -q "br-lan"; do sleep 3; done\n')
+
+    wait_for_prompt_match(ser, PROMPT_OPENWRT_SHELL)
+    time.sleep(3)
+    print()
+    logging.info("OpenWRT LAN ready")
 
 
 def flash_openwrt(ser, openwrt_image: str):
@@ -131,7 +160,8 @@ def main():
         ensure_uboot_ready(ser, args.password)
         configure_ramboot(ser, config.tftp_ip, config.ap_ip, config.ramboot_filename)
         run_ramboot(ser)
-        wait_for_openwrt_ready(ser)
+        wait_for_openwrt_shell_ready(ser)
+        wait_for_openwrt_lan_ready(ser)
 
     if args.loglevel == logging.DEBUG:
         print()
