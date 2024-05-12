@@ -20,17 +20,31 @@ PROMPT_SYSUPGRADE_COMPLETE = r"Rebooting system..."
 
 OPENWRT_DEFAULT_LAN_IP = ipaddress.IPv4Address("192.168.1.1")
 
-ramboot_filename = config.openwrt_images_prefix + "initramfs-kernel.bin"
-sysupgrade_filename = config.openwrt_images_prefix + "squashfs-sysupgrade.bin"
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Huawei APXXXXDN Autoflasher")
-    parser.add_argument("port", type=str, help="Serial port")
-    parser.add_argument("--speed", type=int, default=9600, help="Baudrate")
     parser.add_argument(
-        "--password",
+        "ramboot_file_name",
+        type=str,
+        help="Ramboot filename (only!), eg. openwrt-ath79-generic-huawei_apXXXXdn-initramfs-kernel.bin",
+    )
+    parser.add_argument(
+        "sysupgrade_file_path",
+        type=str,
+        help="Sysupgrade file path, eg. openwrt-ath79-generic-huawei_apXXXXdn-squashfs-sysupgrade.bin",
+    )
+    parser.add_argument(
+        "--port",
+        type=str,
+        default="/dev/ttyUSB0",
+        help="Serial port, default is /dev/ttyUSB0",
+    )
+    parser.add_argument(
+        "--speed", type=int, default=9600, help="Baudrate, default is 9600"
+    )
+    parser.add_argument(
         "-p",
+        "--password",
         type=str,
         default="admin@huawei.com",
         help="Bootloader Password",
@@ -191,7 +205,7 @@ def set_openwrt_lan_ip(ser, ip: ipaddress.IPv4Address):
     ser.write(b"/etc/init.d/network restart\n")
 
 
-def flash_openwrt(ser, ap_ip: ipaddress.IPv4Address):
+def flash_openwrt(ser, ap_ip: ipaddress.IPv4Address, sysupgrade_file: str):
     logging.info("Copying sysupgrade image to AP using scp")
 
     scp_command = [
@@ -201,7 +215,7 @@ def flash_openwrt(ser, ap_ip: ipaddress.IPv4Address):
         "-o",
         "UserKnownHostsFile=/dev/null",
         "-O",  # Enable legacy scp mode, otherwise we get "ash: /usr/libexec/sftp-server: not found"
-        os.path.join(config.openwrt_images_path, sysupgrade_filename),
+        sysupgrade_file,
         f"root@{ap_ip}:/tmp",
     ]
 
@@ -215,8 +229,9 @@ def flash_openwrt(ser, ap_ip: ipaddress.IPv4Address):
     if debug_logging_enabled():
         options += " -v"
 
-    logging.info(f"Running sysupgrade with OpenWrt image {sysupgrade_filename}")
-    ser.write(f"sysupgrade {options} /tmp/{sysupgrade_filename}\n".encode("utf-8"))
+    sysupgrade_file_name = os.path.basename(sysupgrade_file)
+    logging.info(f"Running sysupgrade with OpenWrt image {sysupgrade_file_name}")
+    ser.write(f"sysupgrade {options} /tmp/{sysupgrade_file_name}\n".encode("utf-8"))
 
 
 def main():
@@ -225,7 +240,7 @@ def main():
     with serial.Serial(args.port, args.speed, timeout=1) as ser:
         # Ramboot
         ensure_uboot_ready(ser, args.password)
-        configure_ramboot(ser, config.tftp_ip, args.ap_ip, ramboot_filename)
+        configure_ramboot(ser, config.tftp_ip, args.ap_ip, args.ramboot_file_name)
         run_ramboot(ser)
 
         # Flash OpenWrt
@@ -234,10 +249,9 @@ def main():
         if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
             set_openwrt_lan_ip(ser, args.ap_ip)
         wait_for_ap_pingable(ser, args.ap_ip)
-        flash_openwrt(ser, args.ap_ip)
+        flash_openwrt(ser, args.ap_ip, args.sysupgrade_file_path)
 
         # Wait for sysupgrade to finish
-        time.sleep(30)
         wait_for_openwrt_shell_ready(ser)
         wait_for_openwrt_lan_ready(ser)
         if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
