@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import time
@@ -6,6 +7,8 @@ import serial
 import logging
 import argparse
 import ipaddress
+import subprocess
+import network_utils
 
 
 PROMPT_STOP_AUTOBOOT = r"Press f or F  to stop Auto-Boot"
@@ -13,6 +16,7 @@ PROMPT_SKIP_BUS_TEST = r"Press j or J to stop Bus-Test"
 PROMPT_PASSWORD = r"Password for uboot cmd line :"
 PROMPT_UBOOT_READY = r"ar7240>"
 PROMPT_OPENWRT_SHELL = r"root@\S+:\S+#"
+PROMPT_SYSUPGRADE_COMPLETE = r"Rebooting system..."
 
 OPENWRT_DEFAULT_LAN_IP = ipaddress.IPv4Address("192.168.1.1")
 
@@ -58,6 +62,10 @@ def parse_args():
     return parser.parse_args()
 
 
+def debug_logging_enabled():
+    return logging.getLogger().level == logging.DEBUG
+
+
 def wait_for_prompt_match(ser, prompt_regex):
     buffer = ""
     while True:
@@ -66,7 +74,7 @@ def wait_for_prompt_match(ser, prompt_regex):
         # Therefore, we have to ignore decoding errors here.
         bytes_to_read = 1 if ser.inWaiting() == 0 else ser.inWaiting()
         new_read = ser.read(bytes_to_read).decode("utf-8", errors="ignore")
-        if logging.getLogger().level == logging.DEBUG:
+        if debug_logging_enabled():
             print(new_read, end="")
             sys.stdout.flush()
 
@@ -142,7 +150,7 @@ def wait_for_openwrt_shell_ready(ser):
         ser.write(b"\n")
         time.sleep(1)
         read = ser.read(ser.inWaiting()).decode("utf-8", errors="ignore")
-        if logging.getLogger().level == logging.DEBUG:
+        if debug_logging_enabled():
             print(read, end="")
             sys.stdout.flush()
         if re.search(PROMPT_OPENWRT_SHELL, read):
@@ -158,9 +166,23 @@ def wait_for_openwrt_lan_ready(ser):
     ser.write(b'while ! ip link show br-lan | grep -q "br-lan"; do sleep 3; done\n')
 
     wait_for_prompt_match(ser, PROMPT_OPENWRT_SHELL)
-    time.sleep(3)
+    time.sleep(5)
     print()
-    logging.info("OpenWRT LAN ready")
+    logging.info("OpenWrt LAN ready")
+
+
+def wait_for_ap_pingable(ser, ip: ipaddress.IPv4Address):
+    logging.info(f"Waiting for AP @ {ip} to be pingable")
+    for _ in range(180):
+        if debug_logging_enabled():
+            print(ser.read(ser.inWaiting()).decode("utf-8", errors="ignore"), end="")
+
+        if network_utils.ip_responds_to_ping(ip):
+            logging.info(f"AP @ {ip} is pingable now")
+            return
+        time.sleep(1)
+
+    raise Exception(f"Timeout waiting for AP @ {ip} to be pingable")
 
 
 def set_openwrt_lan_ip(ser, ip: ipaddress.IPv4Address):
@@ -169,21 +191,58 @@ def set_openwrt_lan_ip(ser, ip: ipaddress.IPv4Address):
     ser.write(b"/etc/init.d/network restart\n")
 
 
-def flash_openwrt(ser, openwrt_image: str):
-    pass
+def flash_openwrt(ser, ap_ip: ipaddress.IPv4Address):
+    logging.info("Copying sysupgrade image to AP using scp")
+
+    scp_command = [
+        "scp",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-O",  # Enable legacy scp mode, otherwise we get "ash: /usr/libexec/sftp-server: not found"
+        os.path.join(config.openwrt_images_path, sysupgrade_filename),
+        f"root@{ap_ip}:/tmp",
+    ]
+
+    try:
+        subprocess.check_call(scp_command)
+    except subprocess.CalledProcessError:
+        logging.error("Failed to copy sysupgrade image using scp")
+        raise
+
+    options = "-n"  # Don't save config
+    if debug_logging_enabled():
+        options += " -v"
+
+    logging.info(f"Running sysupgrade with OpenWrt image {sysupgrade_filename}")
+    ser.write(f"sysupgrade {options} /tmp/{sysupgrade_filename}\n".encode("utf-8"))
 
 
 def main():
     args = parse_args()
     logging.basicConfig(level=args.loglevel)
     with serial.Serial(args.port, args.speed, timeout=1) as ser:
+        # Ramboot
         ensure_uboot_ready(ser, args.password)
         configure_ramboot(ser, config.tftp_ip, args.ap_ip, ramboot_filename)
         run_ramboot(ser)
+
+        # Flash OpenWrt
         wait_for_openwrt_shell_ready(ser)
         wait_for_openwrt_lan_ready(ser)
         if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
             set_openwrt_lan_ip(ser, args.ap_ip)
+        wait_for_ap_pingable(ser, args.ap_ip)
+        flash_openwrt(ser, args.ap_ip)
+
+        # Wait for sysupgrade to finish
+        time.sleep(30)
+        wait_for_openwrt_shell_ready(ser)
+        wait_for_openwrt_lan_ready(ser)
+        if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
+            set_openwrt_lan_ip(ser, args.ap_ip)
+        wait_for_ap_pingable(ser, args.ap_ip)
 
     if args.loglevel == logging.DEBUG:
         print()
