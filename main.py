@@ -1,14 +1,18 @@
 import re
 import sys
 import time
+import config
 import serial
 import logging
 import argparse
+import ipaddress
 
 
-PROMPT_STOP_AUTOBOOT = "to stop Auto-Boot"
+PROMPT_STOP_AUTOBOOT = "Press f or F  to stop Auto-Boot"
+PROMPT_SKIP_BUS_TEST = "Press j or J to stop Bus-Test"
 PROMPT_PASSWORD = "Password for uboot cmd line :"
 PROMPT_UBOOT_READY = "ar7240>"
+PROMPT_OPENWRT_LAN_READY = "br-lan: link becomes ready"
 
 
 def parse_args():
@@ -71,20 +75,52 @@ def ensure_uboot_ready(ser, password):
         3. The password has already been entered. We only get the prompt when we press enter.
     """
     ser.write(b"\n")
-    m = wait_for_prompt_match(
-        ser, f"{PROMPT_STOP_AUTOBOOT}|{PROMPT_PASSWORD}|{PROMPT_UBOOT_READY}"
-    )
-    if m == PROMPT_STOP_AUTOBOOT:
-        time.sleep(0.5)
-        ser.write(b"f\n")
-        wait_for_prompt_match(ser, PROMPT_PASSWORD)
-    elif m == PROMPT_PASSWORD:
-        ser.write(f"{password}\n".encode("utf-8"))
-        wait_for_prompt_match(ser, PROMPT_UBOOT_READY)
+    for _ in range(4):
+        m = wait_for_prompt_match(
+            ser,
+            f"{PROMPT_STOP_AUTOBOOT}|{PROMPT_PASSWORD}|{PROMPT_UBOOT_READY}|{PROMPT_SKIP_BUS_TEST}",
+        )
+        if m == PROMPT_SKIP_BUS_TEST:
+            time.sleep(0.2)
+            ser.write(b"j")
+        elif m == PROMPT_STOP_AUTOBOOT:
+            time.sleep(0.2)
+            ser.write(b"f")
+        elif m == PROMPT_PASSWORD:
+            time.sleep(0.2)
+            ser.write(f"{password}\n".encode("utf-8"))
+        elif m == PROMPT_UBOOT_READY:
+            break
+        else:
+            raise Exception("Unexpected prompt")
+
+    print()
     logging.info("U-Boot ready")
 
 
-def configure_ramboot(ser):
+def send_uboot_cmd(ser, cmd: str):
+    ser.write(f"{cmd}\n".encode("utf-8"))
+    wait_for_prompt_match(ser, PROMPT_UBOOT_READY)
+
+
+def configure_ramboot(
+    ser, tftp_ip: ipaddress.IPv4Address, ap_ip: ipaddress.IPv4Address, filename: str
+):
+    send_uboot_cmd(ser, f"setenv serverip {tftp_ip}")
+    send_uboot_cmd(ser, f"setenv ipaddr {ap_ip}")
+    send_uboot_cmd(ser, f"setenv rambootfile {filename}")
+
+
+def run_ramboot(ser):
+    send_uboot_cmd(ser, "run ramboot")
+
+
+def wait_for_openwrt_ready(ser):
+    wait_for_prompt_match(ser, PROMPT_OPENWRT_LAN_READY)
+    logging.info("OpenWRT ready")
+
+
+def flash_openwrt(ser, openwrt_image: str):
     pass
 
 
@@ -93,6 +129,9 @@ def main():
     logging.basicConfig(level=args.loglevel)
     with serial.Serial(args.port, args.speed, timeout=1) as ser:
         ensure_uboot_ready(ser, args.password)
+        configure_ramboot(ser, config.tftp_ip, config.ap_ip, config.ramboot_filename)
+        run_ramboot(ser)
+        wait_for_openwrt_ready(ser)
 
     if args.loglevel == logging.DEBUG:
         print()
