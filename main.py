@@ -12,7 +12,12 @@ PROMPT_STOP_AUTOBOOT = r"Press f or F  to stop Auto-Boot"
 PROMPT_SKIP_BUS_TEST = r"Press j or J to stop Bus-Test"
 PROMPT_PASSWORD = r"Password for uboot cmd line :"
 PROMPT_UBOOT_READY = r"ar7240>"
-PROMPT_OPENWRT_SHELL = r"root@\S+:/#"
+PROMPT_OPENWRT_SHELL = r"root@\S+:\S+#"
+
+OPENWRT_DEFAULT_LAN_IP = ipaddress.IPv4Address("192.168.1.1")
+
+ramboot_filename = config.openwrt_images_prefix + "initramfs-kernel.bin"
+sysupgrade_filename = config.openwrt_images_prefix + "squashfs-sysupgrade.bin"
 
 
 def parse_args():
@@ -25,6 +30,12 @@ def parse_args():
         type=str,
         default="admin@huawei.com",
         help="Bootloader Password",
+    )
+    parser.add_argument(
+        "--ap-ip",
+        type=ipaddress.IPv4Address,
+        default=OPENWRT_DEFAULT_LAN_IP,
+        help="IP address for the AP",
     )
     parser.add_argument(
         "-d",
@@ -120,6 +131,9 @@ def configure_ramboot(
 
 
 def run_ramboot(ser):
+    # We should wait a bit for the LAN interface to be (really) ready.
+    # Otherwise, the TFTP connection might abort during ramboot image transfer.
+    time.sleep(5)
     send_uboot_cmd(ser, "run ramboot", wait_for_prompt=False)
 
 
@@ -149,6 +163,12 @@ def wait_for_openwrt_lan_ready(ser):
     logging.info("OpenWRT LAN ready")
 
 
+def set_openwrt_lan_ip(ser, ip: ipaddress.IPv4Address):
+    ser.write(f"uci set network.lan.ipaddr={ip}\n".encode("utf-8"))
+    ser.write(b"uci commit network\n")
+    ser.write(b"/etc/init.d/network restart\n")
+
+
 def flash_openwrt(ser, openwrt_image: str):
     pass
 
@@ -158,10 +178,12 @@ def main():
     logging.basicConfig(level=args.loglevel)
     with serial.Serial(args.port, args.speed, timeout=1) as ser:
         ensure_uboot_ready(ser, args.password)
-        configure_ramboot(ser, config.tftp_ip, config.ap_ip, config.ramboot_filename)
+        configure_ramboot(ser, config.tftp_ip, args.ap_ip, ramboot_filename)
         run_ramboot(ser)
         wait_for_openwrt_shell_ready(ser)
         wait_for_openwrt_lan_ready(ser)
+        if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
+            set_openwrt_lan_ip(ser, args.ap_ip)
 
     if args.loglevel == logging.DEBUG:
         print()
