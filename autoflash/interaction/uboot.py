@@ -1,3 +1,4 @@
+import re
 import time
 import logging
 import ipaddress
@@ -42,6 +43,7 @@ def ensure_ready(ser, password):
         elif m == PROMPT_UBOOT_READY:
             break
         else:
+            serial.log_buffer_as_error()
             raise Exception("Unexpected prompt")
 
     print()
@@ -67,3 +69,14 @@ def run_ramboot(ser):
     # Otherwise, the TFTP connection might abort during ramboot image transfer.
     time.sleep(5)
     send_uboot_cmd(ser, "run ramboot", wait_for_prompt=False)
+
+    ramboot_failed = r"Execute .* Fail"
+    result = serial.wait_for_prompt_match(
+        ser,
+        "|".join(["Linux version", ramboot_failed]),
+        timeout=20,
+    )
+
+    if re.match(ramboot_failed, result):
+        serial.log_buffer_as_error()
+        raise Exception("Ramboot failed. Is TFTP server started?")

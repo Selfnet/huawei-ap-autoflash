@@ -18,7 +18,7 @@ def wait_for_shell_ready(ser):
         ser.write(b"\n")
         time.sleep(1)
         read = ser.read(ser.inWaiting()).decode("utf-8", errors="ignore")
-        if debug_logging_enabled():
+        if debug_logging_enabled() and read != "\n":
             print(read, end="")
             sys.stdout.flush()
         if re.search(PROMPT_OPENWRT_SHELL, read):
