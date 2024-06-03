@@ -1,0 +1,2 @@
+autoflash:
+    python -m autoflash
