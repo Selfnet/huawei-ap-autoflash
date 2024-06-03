@@ -29,9 +29,10 @@ def parse_args():
         help="Ramboot filename (only!), eg. openwrt-ath79-generic-huawei_apXXXXdn-initramfs-kernel.bin",
     )
     parser.add_argument(
-        "sysupgrade_file_path",
+        "--sysupgrade-path",
         type=str,
-        help="Sysupgrade file path, eg. openwrt-ath79-generic-huawei_apXXXXdn-squashfs-sysupgrade.bin",
+        help="Sysupgrade file path, eg. openwrt-ath79-generic-huawei_apXXXXdn-squashfs-sysupgrade.bin. "
+        "If not provided, the script will only ramboot the AP.",
     )
     parser.add_argument(
         "--port",
@@ -243,20 +244,21 @@ def main():
         configure_ramboot(ser, config.tftp_ip, args.ap_ip, args.ramboot_file_name)
         run_ramboot(ser)
 
-        # Flash OpenWrt
-        wait_for_openwrt_shell_ready(ser)
-        wait_for_openwrt_lan_ready(ser)
-        if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
-            set_openwrt_lan_ip(ser, args.ap_ip)
-        wait_for_ap_pingable(ser, args.ap_ip)
-        flash_openwrt(ser, args.ap_ip, args.sysupgrade_file_path)
+        if args.sysupgrade_path:
+            # Flash OpenWrt
+            wait_for_openwrt_shell_ready(ser)
+            wait_for_openwrt_lan_ready(ser)
+            if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
+                set_openwrt_lan_ip(ser, args.ap_ip)
+            wait_for_ap_pingable(ser, args.ap_ip)
+            flash_openwrt(ser, args.ap_ip, args.sysupgrade_path)
 
-        # Wait for sysupgrade to finish
-        wait_for_openwrt_shell_ready(ser)
-        wait_for_openwrt_lan_ready(ser)
-        if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
-            set_openwrt_lan_ip(ser, args.ap_ip)
-        wait_for_ap_pingable(ser, args.ap_ip)
+            # Wait for sysupgrade to finish
+            wait_for_openwrt_shell_ready(ser)
+            wait_for_openwrt_lan_ready(ser)
+            if args.ap_ip != OPENWRT_DEFAULT_LAN_IP:
+                set_openwrt_lan_ip(ser, args.ap_ip)
+            wait_for_ap_pingable(ser, args.ap_ip)
 
     if args.loglevel == logging.DEBUG:
         print()
