@@ -1,8 +1,8 @@
 import logging
 import argparse
 import ipaddress
-from . import OPENWRT_DEFAULT_LAN_IP
-from . import run_autoflash
+from autoflash import OPENWRT_DEFAULT_LAN_IP
+from autoflash import run_autoflash
 
 
 def parse_args():
