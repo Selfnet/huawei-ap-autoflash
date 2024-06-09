@@ -33,7 +33,7 @@ def wait_for_lan_ready(ser):
     # Bash oneliner that waits until the output of the command `ip link show br-lan` contains "br-lan"
     ser.write(b'while ! ip link show br-lan | grep -q "br-lan"; do sleep 3; done\n')
 
-    serial.wait_for_prompt_match(ser, PROMPT_OPENWRT_SHELL)
+    serial.wait_for_prompt_match(ser, PROMPT_OPENWRT_SHELL, timeout=180)
     time.sleep(5)
     print()
     logging.info("OpenWrt LAN ready")
