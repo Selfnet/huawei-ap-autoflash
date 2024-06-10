@@ -1,4 +1,5 @@
 import random
+import shutil
 import logging
 import tempfile
 import argparse
@@ -10,7 +11,8 @@ from pathlib import Path
 def flash_autoconf(
     images_dir: Path, serial_port: str, baudrate: int, bootloader_password: str
 ):
-    with Path(tempfile.TemporaryDirectory()) as tmpdir:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
         logging.info(f"Using temporary directory {tmpdir}")
 
         metadata_file = random.choice(list(images_dir.glob("*.json")))
@@ -18,8 +20,10 @@ def flash_autoconf(
 
         logging.info(f"Using metadata file {metadata_file}")
 
-        metadata_file.rename(tmpdir / metadata_file.name)
-        sysupgrade_file.rename(tmpdir / sysupgrade_file.name)
+        shutil.move(metadata_file, tmpdir / metadata_file.name)
+        shutil.move(sysupgrade_file, tmpdir / sysupgrade_file.name)
+        metadata_file = tmpdir / metadata_file.name
+        sysupgrade_file = tmpdir / sysupgrade_file.name
 
         run_autoflash(
             ramboot_file_name="ramboot.bin",
@@ -36,6 +40,7 @@ def parse_args():
         prog="autoflash", description="Huawei APXXXXDN Autoflasher"
     )
     parser.add_argument(
+        "-i",
         "--images-dir",
         type=Path,
         required=True,
@@ -48,7 +53,7 @@ def parse_args():
         help="Serial port, default is /dev/ttyUSB0",
     )
     parser.add_argument(
-        "--speed", type=int, default=9600, help="Baudrate, default is 9600"
+        "-s", "--speed", type=int, default=9600, help="Baudrate, default is 9600"
     )
     parser.add_argument(
         "-p",
