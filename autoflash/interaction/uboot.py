@@ -3,6 +3,7 @@ import time
 import logging
 import ipaddress
 import autoflash.interaction.serial as serial
+from ..log import debug_logging_enabled
 
 PROMPT_STOP_AUTOBOOT = r"Press f or F  to stop Auto-Boot"
 PROMPT_SKIP_BUS_TEST = r"Press j or J to stop Bus-Test"
@@ -46,7 +47,9 @@ def ensure_ready(ser, password):
             serial.log_buffer_as_error()
             raise Exception("Unexpected prompt")
 
-    print()
+    if debug_logging_enabled():
+        print()
+
     logging.info("U-Boot ready")
 
 
@@ -59,12 +62,16 @@ def send_uboot_cmd(ser, cmd: str, wait_for_prompt=True):
 def configure_ramboot(
     ser, tftp_ip: ipaddress.IPv4Address, ap_ip: ipaddress.IPv4Address, filename: str
 ):
+    logging.info(
+        f"Configuring ramboot with TFTP server '{tftp_ip}', AP IP '{ap_ip}', filename '{filename}'"
+    )
     send_uboot_cmd(ser, f"setenv serverip {tftp_ip}")
     send_uboot_cmd(ser, f"setenv ipaddr {ap_ip}")
     send_uboot_cmd(ser, f"setenv rambootfile {filename}")
 
 
 def run_ramboot(ser):
+    logging.info("Starting ramboot")
     # We should wait a bit for the LAN interface to be (really) ready.
     # Otherwise, the TFTP connection might abort during ramboot image transfer.
     time.sleep(5)
@@ -80,3 +87,5 @@ def run_ramboot(ser):
     if re.match(ramboot_failed, result):
         serial.log_buffer_as_error()
         raise Exception("Ramboot failed. Is TFTP server started?")
+
+    logging.info("Ramboot successfully started")

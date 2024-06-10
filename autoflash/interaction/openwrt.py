@@ -22,7 +22,9 @@ def wait_for_shell_ready(ser):
             print(read, end="")
             sys.stdout.flush()
         if re.search(PROMPT_OPENWRT_SHELL, read):
-            print()
+            if debug_logging_enabled():
+                print()
+
             logging.info("OpenWRT shell ready")
             return
 
@@ -30,12 +32,19 @@ def wait_for_shell_ready(ser):
 
 
 def wait_for_lan_ready(ser):
+    logging.info("Waiting for OpenWrt's 'br-lan' LAN interface to be ready")
+
+    ser.write(b"\n")
+    serial.wait_for_prompt_match(ser, PROMPT_OPENWRT_SHELL)
+
     # Bash oneliner that waits until the output of the command `ip link show br-lan` contains "br-lan"
     ser.write(b'while ! ip link show br-lan | grep -q "br-lan"; do sleep 3; done\n')
 
     serial.wait_for_prompt_match(ser, PROMPT_OPENWRT_SHELL, timeout=180)
     time.sleep(5)
-    print()
+    if debug_logging_enabled():
+        print()
+
     logging.info("OpenWrt LAN ready")
 
 
@@ -54,6 +63,7 @@ def wait_for_pingable(ser, ip: ipaddress.IPv4Address):
 
 
 def set_lan_ip(ser, ip: ipaddress.IPv4Address):
+    logging.info(f"Setting LAN IP to {ip}")
     ser.write(f"uci set network.lan.ipaddr={ip}\n".encode("utf-8"))
     ser.write(b"uci commit network\n")
     ser.write(b"/etc/init.d/network restart\n")

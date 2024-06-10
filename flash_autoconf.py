@@ -69,15 +69,7 @@ def parse_args():
         action="store_const",
         dest="loglevel",
         const=logging.DEBUG,
-        default=logging.WARNING,
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        help="Enable verbose logging",
-        action="store_const",
-        dest="loglevel",
-        const=logging.INFO,
+        default=logging.INFO,
     )
 
     return parser.parse_args()
