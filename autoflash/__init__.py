@@ -34,7 +34,3 @@ def run_autoflash(
 
         # Wait for sysupgrade to finish
         openwrt.wait_for_shell_ready(ser)
-        openwrt.wait_for_lan_ready(ser)
-        if ap_ip != OPENWRT_DEFAULT_LAN_IP:
-            openwrt.set_lan_ip(ser, ap_ip)
-        openwrt.wait_for_pingable(ser, ap_ip)

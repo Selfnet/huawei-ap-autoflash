@@ -6,6 +6,7 @@ import argparse
 from autoflash import OPENWRT_DEFAULT_LAN_IP
 from autoflash import run_autoflash
 from pathlib import Path
+import autoflash.log as log
 
 
 def flash_autoconf(
@@ -20,10 +21,10 @@ def flash_autoconf(
 
         logging.info(f"Using metadata file {metadata_file}")
 
-        shutil.move(metadata_file, tmpdir / metadata_file.name)
-        shutil.move(sysupgrade_file, tmpdir / sysupgrade_file.name)
-        metadata_file = tmpdir / metadata_file.name
-        sysupgrade_file = tmpdir / sysupgrade_file.name
+        # shutil.move(metadata_file, tmpdir / metadata_file.name)
+        # shutil.move(sysupgrade_file, tmpdir / sysupgrade_file.name)
+        # metadata_file = tmpdir / metadata_file.name
+        # sysupgrade_file = tmpdir / sysupgrade_file.name
 
         run_autoflash(
             ramboot_file_name="ramboot.bin",
@@ -33,6 +34,9 @@ def flash_autoconf(
             password=bootloader_password,
             ap_ip=OPENWRT_DEFAULT_LAN_IP,  # TODO: Support multiple APs in parallel
         )
+
+        sysupgrade_file.unlink()
+        metadata_file.unlink()
 
 
 def parse_args():
@@ -77,7 +81,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=args.loglevel)
+    logging.basicConfig(level=args.loglevel, format=log.FORMAT, datefmt=log.DATEFMT)
 
     flash_autoconf(
         images_dir=args.images_dir,

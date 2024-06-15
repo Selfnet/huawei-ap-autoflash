@@ -9,6 +9,8 @@ PROMPT_STOP_AUTOBOOT = r"Press f or F  to stop Auto-Boot"
 PROMPT_SKIP_BUS_TEST = r"Press j or J to stop Bus-Test"
 PROMPT_PASSWORD = r"Password for uboot cmd line :"
 PROMPT_UBOOT_READY = r"ar7240>"
+PROMPT_NEW_PASSWORD = r"New password:"
+PROMPT_CONFIRM_PASSWORD = r"Confirm  password:"
 
 
 def ensure_ready(ser, password):
@@ -29,6 +31,8 @@ def ensure_ready(ser, password):
                     PROMPT_PASSWORD,
                     PROMPT_UBOOT_READY,
                     PROMPT_SKIP_BUS_TEST,
+                    PROMPT_NEW_PASSWORD,
+                    PROMPT_CONFIRM_PASSWORD,
                 ]
             ),
         )
@@ -39,6 +43,9 @@ def ensure_ready(ser, password):
             time.sleep(0.2)
             ser.write(b"f")
         elif m == PROMPT_PASSWORD:
+            time.sleep(0.2)
+            ser.write(f"{password}\n".encode("utf-8"))
+        elif m == PROMPT_NEW_PASSWORD or m == PROMPT_CONFIRM_PASSWORD:
             time.sleep(0.2)
             ser.write(f"{password}\n".encode("utf-8"))
         elif m == PROMPT_UBOOT_READY:
@@ -65,6 +72,9 @@ def configure_ramboot(
     logging.info(
         f"Configuring ramboot with TFTP server '{tftp_ip}', AP IP '{ap_ip}', filename '{filename}'"
     )
+    send_uboot_cmd(ser, "")
+    time.sleep(1)
+    send_uboot_cmd(ser, "")
     send_uboot_cmd(ser, f"setenv serverip {tftp_ip}")
     send_uboot_cmd(ser, f"setenv ipaddr {ap_ip}")
     send_uboot_cmd(ser, f"setenv rambootfile {filename}")
