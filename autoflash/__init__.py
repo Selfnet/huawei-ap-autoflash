@@ -3,8 +3,9 @@ import ipaddress
 import autoflash.interaction.uboot as uboot
 import autoflash.interaction.openwrt as openwrt
 
+IP_NETWORK = ipaddress.IPv4Network("192.168.1.0/24")
 OPENWRT_DEFAULT_LAN_IP = ipaddress.IPv4Address("192.168.1.1")
-TFTP_IP = ipaddress.IPv4Address("192.168.1.10")
+TFTP_IP = IP_NETWORK[10]
 
 
 def run_autoflash(

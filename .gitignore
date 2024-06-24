@@ -1,6 +1,7 @@
 openwrt.bin
 labelprinter/*.png
 test.py
+*.sqlite
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode

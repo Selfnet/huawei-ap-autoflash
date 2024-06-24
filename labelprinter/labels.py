@@ -1,4 +1,4 @@
-import printer
+import labelprinter.printer as printer
 import cairo
 import gi
 
@@ -38,7 +38,7 @@ def create_wifi_qr(ssid, password):
     return qrimg
 
 
-def render_wifi_label(ssid, password):
+def render_wifi(ssid, password):
     recsurf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
     ctx = cairo.Context(recsurf)
     imgsurf = cairo.ImageSurface(printer.REQUIRED_FORMAT, 620, printer.REQUIRED_HEIGHT)
@@ -69,7 +69,7 @@ def render_wifi_label(ssid, password):
     return imgsurf
 
 
-def render_login_label(ip, password, bootloader_pw):
+def render_login(ip, password, bootloader_pw):
     font_size = 27
     recsurf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
     ctx = cairo.Context(recsurf)
@@ -100,7 +100,7 @@ def render_login_label(ip, password, bootloader_pw):
 
 
 if __name__ == "__main__":
-    imgsurf = render_wifi_label("stuttgart-EX", "Faem3heiweetae6e")
+    imgsurf = render_wifi("stuttgart-EX", "Faem3heiweetae6e")
     imgsurf.write_to_png("out.png")
-    imgsurf = render_login_label("192.168.0.1", "eeG1phoo", "dasuboot")
+    imgsurf = render_login("192.168.0.1", "eeG1phoo", "dasuboot")
     imgsurf.write_to_png("out2.png")
