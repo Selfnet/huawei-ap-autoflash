@@ -41,7 +41,7 @@ def create_wifi_qr(ssid, password):
 def render_wifi_label(ssid, password):
     recsurf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
     ctx = cairo.Context(recsurf)
-    imgsurf = cairo.ImageSurface(printer.REQUIRED_FORMAT, 580, printer.REQUIRED_HEIGHT)
+    imgsurf = cairo.ImageSurface(printer.REQUIRED_FORMAT, 620, printer.REQUIRED_HEIGHT)
     ctx = cairo.Context(imgsurf)
     ctx.set_source_rgb(1, 1, 1)
     ctx.paint()
@@ -55,22 +55,25 @@ def render_wifi_label(ssid, password):
             putpixel(imgsurf, x, y + 7, qrimg.getpixel((x, y)))
     imgsurf.mark_dirty()
 
+    opts = cairo.FontOptions()
+    opts.set_antialias(cairo.ANTIALIAS_NONE)
     layout = PangoCairo.create_layout(ctx)
-    font = Pango.FontDescription("Terminus 30")
+    PangoCairo.context_set_font_options(layout.get_context(), opts)
+    font = Pango.FontDescription("Liberation Mono Bold 28")
     layout.set_font_description(font)
-    layout.set_text(f"SSID: {ssid}\nPW:   {password}")
+    layout.set_text(f"Name: {ssid}\nPW:   {password}")
     ctx.set_source_rgb(0, 0, 0)
-    ctx.move_to(120, 20)
+    ctx.move_to(110, 18)
     PangoCairo.show_layout(ctx, layout)
 
     return imgsurf
 
 
 def render_login_label(ip, password, bootloader_pw):
-    font_size = 30
+    font_size = 27
     recsurf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
     ctx = cairo.Context(recsurf)
-    width = 180 + int(font_size * 0.75 * max(len(ip), len(bootloader_pw)))
+    width = 180 + int(font_size * max(len(ip), len(bootloader_pw)))
     imgsurf = cairo.ImageSurface(
         printer.REQUIRED_FORMAT,
         width,
@@ -82,10 +85,13 @@ def render_login_label(ip, password, bootloader_pw):
     ctx.set_source_surface(recsurf)
     ctx.paint()
 
+    opts = cairo.FontOptions()
+    opts.set_antialias(cairo.ANTIALIAS_NONE)
     layout = PangoCairo.create_layout(ctx)
-    font = Pango.FontDescription(f"Terminus {font_size}")
+    PangoCairo.context_set_font_options(layout.get_context(), opts)
+    font = Pango.FontDescription(f"Liberation Mono Bold {font_size}")
     layout.set_font_description(font)
-    layout.set_text(f"AP IP:   {ip}\nroot PW: {password}\nBL PW:   {bootloader_pw}")
+    layout.set_text(f"  AP IP: {ip}\nroot PW: {password}\n  BL PW: {bootloader_pw}")
     ctx.set_source_rgb(0, 0, 0)
     ctx.move_to(10, 4)
     PangoCairo.show_layout(ctx, layout)

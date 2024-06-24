@@ -46,6 +46,10 @@ def format_surface(surf: cairo.ImageSurface):
     assert surf.get_format() == REQUIRED_FORMAT
     assert surf.get_height() == REQUIRED_HEIGHT
     out = list(header)
+
+    width_mm = 24
+    out[0x81] = width_mm & 0xFF
+
     for i in range(4):
         out[0x83 + i] = (surf.get_width() >> (i * 8)) & 0xFF
 
