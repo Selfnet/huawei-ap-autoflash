@@ -91,7 +91,7 @@ def run_ramboot(ser):
     result = serial.wait_for_prompt_match(
         ser,
         "|".join(["Linux version", ramboot_failed]),
-        timeout=20,
+        timeout=50,
     )
 
     if re.match(ramboot_failed, result):
