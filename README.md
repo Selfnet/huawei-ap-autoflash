@@ -33,9 +33,14 @@ git clone <repository-url>
 cd huawei-apxxxxdn-autoflash
 ```
 
-2. Install Python dependencies:
+2. Install Python dependencies (managed by [uv](https://docs.astral.sh/uv/)):
 ```bash
-pip install -r requirements.txt
+uv sync
+```
+
+System packages required for PyGObject / pycairo (Debian/Ubuntu/Raspbian):
+```bash
+sudo apt install libcairo2-dev libgirepository1.0-dev libgirepository-2.0-dev pkg-config meson
 ```
 
 3. Ensure your TFTP server is running and configured to serve files from the appropriate directory.

@@ -1,5 +1,5 @@
 autoflash *ARGS:
-    python autoflash.py {{ARGS}}
+    uv run python autoflash.py {{ARGS}}
 
 flash_autoconf *ARGS:
-    python flash_autoconf.py {{ARGS}}
+    uv run python flash_autoconf.py {{ARGS}}
