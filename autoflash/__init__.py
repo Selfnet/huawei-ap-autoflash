@@ -40,5 +40,10 @@ def run_autoflash(
         openwrt.wait_for_pingable(reader, ap_ip, logger=log)
         openwrt.flash_openwrt(reader, ap_ip, sysupgrade_path, logger=log, debug=debug)
 
-        # Wait for sysupgrade to finish
+        # Wait for sysupgrade to finish (and the AP to come back up).
         openwrt.wait_for_shell_ready(reader, logger=log)
+        # The shell prompt appears via getty long before first-boot init
+        # completes. Wait for the autoconf image's uci-defaults scripts
+        # and overlay setup to finish before declaring success - otherwise
+        # cutting PoE here leaves the AP half-configured.
+        openwrt.wait_for_first_boot_done(reader, logger=log)

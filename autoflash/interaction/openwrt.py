@@ -155,3 +155,33 @@ def flash_openwrt(
     sysupgrade_file_name = os.path.basename(sysupgrade_file)
     log.info(f"Running sysupgrade with OpenWrt image {sysupgrade_file_name}")
     reader.write(f"sysupgrade {options} /tmp/{sysupgrade_file_name}\n".encode("utf-8"))
+
+
+def wait_for_first_boot_done(reader, logger: logging.Logger | None = None):
+    """Wait until the AP's first-boot init has fully completed.
+
+    Cutting power right after the OpenWrt shell prompt re-appears post-
+    sysupgrade is unsafe: the JFFS2 overlay may still be formatting and
+    the autoconf image's /etc/uci-defaults scripts (SSID, root password,
+    network config) may not have run yet. Cutting power then leaves the
+    AP half-configured and possibly with a corrupt overlay.
+
+    Polls inside the AP shell:
+      - /etc/uci-defaults/ is empty (every defaults script ran and
+        removed itself)
+      - the overlay is mounted
+    """
+    log = logger or logging.getLogger(__name__)
+    log.info("Waiting for first-boot init (uci-defaults + overlay) to finish")
+
+    timeout = 240
+    one_liner = (
+        'while [ -n "$(ls -A /etc/uci-defaults 2>/dev/null)" ] '
+        '|| ! mount | grep -q " on /overlay "; do sleep 2; done; '
+        'echo FIRSTBOOT_DONE'
+    )
+    reader.write(b"\n")
+    reader.wait_for_prompt_match(PROMPT_OPENWRT_SHELL, timeout=15)
+    reader.write((one_liner + "\n").encode("utf-8"))
+    reader.wait_for_prompt_match(r"FIRSTBOOT_DONE", timeout=timeout)
+    log.info("First-boot init complete")
