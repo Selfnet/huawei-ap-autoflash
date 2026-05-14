@@ -1,36 +1,59 @@
 import re
-import sys
 import time
 import logging
-from ..log import debug_logging_enabled
-
-_buffer = ""
 
 
-def log_buffer_as_error():
-    for line in _buffer.splitlines():
-        logging.error(line)
+class PromptTimeoutError(Exception):
+    def __init__(self, regex: str, buffer: str):
+        super().__init__(f"Timeout waiting for prompt: '{regex}'")
+        self.regex = regex
+        self.buffer = buffer
 
 
-def wait_for_prompt_match(ser, prompt_regex, timeout=60):
-    global _buffer
-    _buffer = ""
-    start = time.time()
-    while time.time() - start < timeout:
-        # There might be weird things happening over serial
-        # (eg. the AP resets before everything is transmitted).
-        # Therefore, we have to ignore decoding errors here.
-        bytes_to_read = 1 if ser.inWaiting() == 0 else ser.inWaiting()
-        new_read = ser.read(bytes_to_read).decode("utf-8", errors="ignore")
-        if debug_logging_enabled():
-            print(new_read, end="")
-            sys.stdout.flush()
+class SerialReader:
+    """Wraps a pyserial Serial object and owns a per-instance read buffer.
 
-        _buffer += new_read
+    Each AP gets its own SerialReader, so parallel workers don't share
+    buffer state. The wrapper also routes raw serial bytes to a logger at
+    DEBUG level instead of writing them to stdout, so per-AP log files /
+    GUI panels stay clean.
+    """
 
-        match = re.search(prompt_regex, _buffer)
-        if match:
-            return match.group(0)
+    def __init__(self, ser, logger: logging.Logger | None = None):
+        self.ser = ser
+        self.logger = logger or logging.getLogger(__name__)
+        self.buffer = ""
 
-    log_buffer_as_error()
-    raise Exception(f"Timeout waiting for prompt: '{prompt_regex}'")
+    def write(self, data: bytes):
+        self.ser.write(data)
+
+    def in_waiting(self) -> int:
+        return self.ser.inWaiting()
+
+    def read_available(self) -> str:
+        n = self.ser.inWaiting()
+        if n == 0:
+            n = 1
+        chunk = self.ser.read(n).decode("utf-8", errors="ignore")
+        if chunk:
+            self.logger.debug("serial<< %r", chunk)
+        return chunk
+
+    def reset_buffer(self):
+        self.buffer = ""
+
+    def log_buffer_as_error(self):
+        for line in self.buffer.splitlines():
+            self.logger.error(line)
+
+    def wait_for_prompt_match(self, prompt_regex: str, timeout: float = 60) -> str:
+        self.buffer = ""
+        start = time.time()
+        while time.time() - start < timeout:
+            self.buffer += self.read_available()
+            match = re.search(prompt_regex, self.buffer)
+            if match:
+                return match.group(0)
+
+        self.log_buffer_as_error()
+        raise PromptTimeoutError(prompt_regex, self.buffer)

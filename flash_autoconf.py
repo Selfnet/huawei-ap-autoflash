@@ -1,13 +1,12 @@
 import json
-import random
-import shutil
 import logging
 import tempfile
 import argparse
-from autoflash import TFTP_IP
-from autoflash import run_autoflash
-from autoflash.ips import get_free_ip
 from pathlib import Path
+
+from autoflash import TFTP_IP, run_autoflash
+from autoflash.ips import get_free_ip
+from autoflash import images as image_pool
 import autoflash.log as log
 from labelprinter import labels, printer
 
@@ -23,17 +22,10 @@ def flash_autoconf(
         tmpdir = Path(tmpdir)
         logging.info(f"Using temporary directory {tmpdir}")
 
-        metadata_file = random.choice(list(images_dir.glob("*.json")))
-        sysupgrade_file = metadata_file.with_suffix(".bin")
+        claimed = image_pool.claim(images_dir, tmpdir)
+        logging.info(f"Claimed image {claimed.metadata.name}")
 
-        logging.info(f"Using metadata file {metadata_file}")
-
-        shutil.move(metadata_file, tmpdir / metadata_file.name)
-        shutil.move(sysupgrade_file, tmpdir / sysupgrade_file.name)
-        metadata_file = tmpdir / metadata_file.name
-        sysupgrade_file = tmpdir / sysupgrade_file.name
-
-        metadata = json.loads(metadata_file.read_text())
+        metadata = json.loads(claimed.metadata.read_text())
 
         if labelprinter:
             wifi_label = labels.render_wifi(
@@ -50,17 +42,21 @@ def flash_autoconf(
         else:
             logging.info("No labelprinter set, skipping label printing")
 
-        run_autoflash(
-            ramboot_file_name="ramboot.bin",
-            sysupgrade_path=sysupgrade_file,
-            port=serial_port,
-            speed=baudrate,
-            password=bootloader_password,
-            ap_ip=get_free_ip(reserved_ips=[TFTP_IP]),
-        )
+        try:
+            run_autoflash(
+                ramboot_file_name="ramboot.bin",
+                sysupgrade_path=str(claimed.sysupgrade),
+                port=serial_port,
+                speed=baudrate,
+                password=bootloader_password,
+                ap_ip=get_free_ip(reserved_ips=[TFTP_IP]),
+            )
+        except Exception:
+            claimed.restore()
+            raise
 
-        sysupgrade_file.unlink()
-        metadata_file.unlink()
+        claimed.sysupgrade.unlink(missing_ok=True)
+        claimed.metadata.unlink(missing_ok=True)
 
 
 def parse_args():

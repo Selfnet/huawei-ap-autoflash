@@ -1,34 +1,41 @@
 import sqlite3
 import ipaddress
+import threading
 from . import IP_NETWORK
 
-con = sqlite3.connect("ips.sqlite")
-cur = con.cursor()
+_lock = threading.Lock()
+_con = sqlite3.connect("ips.sqlite", check_same_thread=False)
+_cur = _con.cursor()
 
-# Ensure the table exists
-cur.execute("""
+_cur.execute("""
 CREATE TABLE IF NOT EXISTS ips (
     ip TEXT PRIMARY KEY NOT NULL
 )
 """)
-con.commit()
+_con.commit()
 
 
 def get_free_ip(reserved_ips: list[ipaddress.IPv4Address]) -> ipaddress.IPv4Address:
-    cur.execute("SELECT ip FROM ips")
+    with _lock:
+        return _get_free_ip_locked(reserved_ips)
 
-    # make a copy for us
-    existing_ips = reserved_ips.copy()
-    existing_ips.extend(ipaddress.IPv4Address(row[0]) for row in cur.fetchall())
+
+def _get_free_ip_locked(
+    reserved_ips: list[ipaddress.IPv4Address],
+) -> ipaddress.IPv4Address:
+    _cur.execute("SELECT ip FROM ips")
+
+    existing_ips = list(reserved_ips)
+    existing_ips.extend(ipaddress.IPv4Address(row[0]) for row in _cur.fetchall())
 
     for ip in IP_NETWORK.hosts():
         if ip not in existing_ips:
-            cur.execute("INSERT INTO ips (ip) VALUES (?)", (str(ip),))
-            con.commit()
+            _cur.execute("INSERT INTO ips (ip) VALUES (?)", (str(ip),))
+            _con.commit()
             return ip
 
     # We're at the end, so the first ones should be free again :)
-    cur.execute("DELETE FROM ips")
-    con.commit()
+    _cur.execute("DELETE FROM ips")
+    _con.commit()
 
-    return get_free_ip(reserved_ips)
+    return _get_free_ip_locked(reserved_ips)
