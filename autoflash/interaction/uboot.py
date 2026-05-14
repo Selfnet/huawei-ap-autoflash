@@ -11,6 +11,11 @@ PROMPT_NEW_PASSWORD = r"New password:"
 PROMPT_CONFIRM_PASSWORD = r"Confirm  password:"
 
 
+class WrongBootloaderPasswordError(Exception):
+    """Raised when the AP re-prompts for the bootloader password after we
+    sent it - meaning the password we used is wrong."""
+
+
 def ensure_ready(reader, password, logger: logging.Logger | None = None):
     """
     The script can be started at two points in time:
@@ -21,7 +26,8 @@ def ensure_ready(reader, password, logger: logging.Logger | None = None):
     """
     log = logger or logging.getLogger(__name__)
     reader.write(b"\n")
-    for _ in range(4):
+    password_sent = False
+    for _ in range(8):
         m = reader.wait_for_prompt_match(
             "|".join(
                 [
@@ -41,18 +47,30 @@ def ensure_ready(reader, password, logger: logging.Logger | None = None):
             time.sleep(0.2)
             reader.write(b"f")
         elif m == PROMPT_PASSWORD:
+            if password_sent:
+                # AP re-prompted for the password after we sent it: the
+                # password we used is wrong. Don't keep retrying - the AP
+                # locks out after a few wrong attempts.
+                reader.log_buffer_as_error()
+                raise WrongBootloaderPasswordError(
+                    "AP re-prompted for the bootloader password after we "
+                    "sent it - the password is wrong. Pass the correct one "
+                    "with -p / --password."
+                )
             time.sleep(0.2)
             reader.write(f"{password}\n".encode("utf-8"))
+            password_sent = True
         elif m == PROMPT_NEW_PASSWORD or m == PROMPT_CONFIRM_PASSWORD:
             time.sleep(0.2)
             reader.write(f"{password}\n".encode("utf-8"))
         elif m == PROMPT_UBOOT_READY:
-            break
+            log.info("U-Boot ready")
+            return
         else:
             reader.log_buffer_as_error()
             raise Exception("Unexpected prompt")
 
-    log.info("U-Boot ready")
+    raise Exception("U-Boot did not become ready after several prompts")
 
 
 def send_uboot_cmd(reader, cmd: str, wait_for_prompt=True):
