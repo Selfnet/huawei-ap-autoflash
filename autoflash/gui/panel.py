@@ -64,7 +64,7 @@ class APPanel(tk.LabelFrame):
             self,
             height=10,
             width=60,
-            font=("TkFixedFont", 9),
+            font=("DejaVu Sans Mono", 9),
             state=tk.DISABLED,
             wrap=tk.NONE,
         )
