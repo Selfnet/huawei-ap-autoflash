@@ -23,6 +23,7 @@ class SerialReader:
         self.ser = ser
         self.logger = logger or logging.getLogger(__name__)
         self.buffer = ""
+        self._log_partial = ""
 
     def write(self, data: bytes):
         self.ser.write(data)
@@ -30,19 +31,36 @@ class SerialReader:
     def in_waiting(self) -> int:
         return self.ser.inWaiting()
 
+    def _emit_complete_lines(self, chunk: str):
+        if not chunk:
+            return
+        self._log_partial += chunk
+        # Normalise CR/LF: APs send lots of \r\n and bare \r.
+        normalised = self._log_partial.replace("\r\n", "\n").replace("\r", "\n")
+        lines = normalised.split("\n")
+        # Last element is the (possibly empty) trailing partial line.
+        for line in lines[:-1]:
+            if line:
+                self.logger.debug("%s", line)
+        self._log_partial = lines[-1]
+
     def read_available(self) -> str:
         n = self.ser.inWaiting()
         if n == 0:
             n = 1
         chunk = self.ser.read(n).decode("utf-8", errors="ignore")
-        if chunk:
-            self.logger.debug("serial<< %r", chunk)
+        self._emit_complete_lines(chunk)
         return chunk
 
     def reset_buffer(self):
         self.buffer = ""
 
     def log_buffer_as_error(self):
+        # Flush any partial debug line so the buffer dump isn't preceded by
+        # an orphaned half-line.
+        if self._log_partial:
+            self.logger.debug("%s", self._log_partial)
+            self._log_partial = ""
         for line in self.buffer.splitlines():
             self.logger.error(line)
 
