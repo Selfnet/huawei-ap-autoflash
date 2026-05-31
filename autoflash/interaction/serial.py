@@ -1,6 +1,7 @@
 import re
 import time
 import logging
+import threading
 
 
 class PromptTimeoutError(Exception):
@@ -8,6 +9,10 @@ class PromptTimeoutError(Exception):
         super().__init__(f"Timeout waiting for prompt: '{regex}'")
         self.regex = regex
         self.buffer = buffer
+
+
+class AbortedError(Exception):
+    pass
 
 
 class SerialReader:
@@ -19,11 +24,13 @@ class SerialReader:
     GUI panels stay clean.
     """
 
-    def __init__(self, ser, logger: logging.Logger | None = None):
+    def __init__(self, ser, logger: logging.Logger | None = None,
+                 cancel_event: threading.Event | None = None):
         self.ser = ser
         self.logger = logger or logging.getLogger(__name__)
         self.buffer = ""
         self._log_partial = ""
+        self._cancel = cancel_event
 
     def write(self, data: bytes):
         self.ser.write(data)
@@ -68,6 +75,8 @@ class SerialReader:
         self.buffer = ""
         start = time.time()
         while time.time() - start < timeout:
+            if self._cancel and self._cancel.is_set():
+                raise AbortedError()
             self.buffer += self.read_available()
             match = re.search(prompt_regex, self.buffer)
             if match:

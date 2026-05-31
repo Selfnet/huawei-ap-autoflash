@@ -1,4 +1,5 @@
 import logging
+import threading
 import serial as pyserial
 import ipaddress
 import autoflash.interaction.uboot as uboot
@@ -18,11 +19,12 @@ def run_autoflash(
     password="admin@huawei.com",
     ap_ip=OPENWRT_DEFAULT_LAN_IP,
     logger: logging.Logger | None = None,
+    cancel_event: threading.Event | None = None,
 ):
     log = logger or logging.getLogger(__name__)
     debug = log.isEnabledFor(logging.DEBUG)
     with pyserial.Serial(port, speed, timeout=1) as ser:
-        reader = SerialReader(ser, logger=log)
+        reader = SerialReader(ser, logger=log, cancel_event=cancel_event)
 
         # Ramboot
         uboot.ensure_ready(reader, password, logger=log)

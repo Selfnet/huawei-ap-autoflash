@@ -49,6 +49,7 @@ class Context:
     # when the user clicks Restart; the worker pops its entry on start.
     reuse: dict[int, images.ClaimedImage] = field(default_factory=dict)
     reuse_lock: threading.Lock = field(default_factory=threading.Lock)
+    cancel_events: dict[int, threading.Event] = field(default_factory=dict)
 
 
 # Status callback signature: (ap_index, event_name, **fields)
@@ -88,6 +89,8 @@ def flash_one(
     poe_enabled = False
     success = False
     claimed: images.ClaimedImage | None = None
+    cancel_event = threading.Event()
+    ctx.cancel_events[ap_index] = cancel_event
     try:
         status(ap_index, "started")
         # Reuse-or-claim
@@ -117,6 +120,7 @@ def flash_one(
             password=ctx.bootloader_password,
             ap_ip=ap_ip,
             logger=log,
+            cancel_event=cancel_event,
         )
 
         time.sleep(5)
@@ -152,6 +156,7 @@ def flash_one(
                 "success" if success else "failure - useful for debugging",
             )
             status(ap_index, "poe_kept")
+        ctx.cancel_events.pop(ap_index, None)
         log.removeHandler(fh)
         fh.close()
 

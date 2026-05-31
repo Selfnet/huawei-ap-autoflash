@@ -92,6 +92,10 @@ class App:
         ).pack(side=tk.LEFT)
         self.btn_start = tk.Button(topbar, text="Start", command=self._on_start)
         self.btn_start.pack(side=tk.RIGHT)
+        self.btn_abort_all = tk.Button(
+            topbar, text="Abort", command=self._on_abort_all
+        )
+        self.btn_abort_all.pack(side=tk.RIGHT, padx=(0, 4))
         self.btn_reset = tk.Button(
             topbar, text="Reset", command=self._on_reset, state=tk.DISABLED
         )
@@ -124,6 +128,7 @@ class App:
                 on_reprint_wifi=self._on_print_wifi,
                 on_reprint_login=self._on_print_login,
                 on_restart=self._on_restart,
+                on_abort=self._on_abort_one,
             )
             p.grid(row=r, column=c, sticky="nsew", padx=3, pady=3)
             self.panels[ap] = p
@@ -212,6 +217,26 @@ class App:
                 self.ctx.reuse[ap_index] = claim
         self._submit(ap_index)
 
+    def _on_abort_one(self, ap_index: int):
+        self.status_var.set(f"Aborting ap{ap_index}...")
+        self.panels[ap_index].btn_abort.configure(state=tk.DISABLED)
+        ev = self.ctx.cancel_events.get(ap_index)
+        if ev:
+            ev.set()
+
+    def _on_abort_all(self):
+        self.status_var.set("Aborting all APs...")
+        running = [
+            i for i, f in self._futures.items() if not f.done()
+        ]
+        for i in running:
+            ev = self.ctx.cancel_events.get(i)
+            if ev:
+                ev.set()
+            p = self.panels.get(i)
+            if p:
+                p.btn_abort.configure(state=tk.DISABLED)
+
     def _on_reset(self):
         self._futures.clear()
         self._metadata.clear()
@@ -253,8 +278,10 @@ class App:
                 if claim is not None:
                     self._last_claim[ev.ap] = claim
                 p.set_metadata(md)
-            elif ev.event in ("flashing", "poe_on", "poe_off", "started"):
+            elif ev.event in ("flashing", "poe_on", "started"):
                 p.set_state("running", ev.event)
+            elif ev.event == "poe_off":
+                p.step_var.set("poe_off")
             elif ev.event == "done":
                 p.set_state("done", "")
             elif ev.event == "failed":

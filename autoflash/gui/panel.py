@@ -32,6 +32,7 @@ class APPanel(tk.LabelFrame):
         on_reprint_wifi: Callable[[int], None],
         on_reprint_login: Callable[[int], None],
         on_restart: Callable[[int], None],
+        on_abort: Callable[[int], None],
     ):
         super().__init__(
             master,
@@ -74,34 +75,27 @@ class APPanel(tk.LabelFrame):
 
         btnbar = tk.Frame(self)
         btnbar.pack(fill=tk.X)
-        self.btn_wifi = tk.Button(
+        self.btn_print = tk.Button(
             btnbar,
-            text="Print WiFi label",
-            state=tk.DISABLED,
-            command=lambda: on_reprint_wifi(self.ap_index),
-        )
-        self.btn_wifi.pack(side=tk.LEFT)
-        self.btn_login = tk.Button(
-            btnbar,
-            text="Print Login label",
-            state=tk.DISABLED,
-            command=lambda: on_reprint_login(self.ap_index),
-        )
-        self.btn_login.pack(side=tk.LEFT, padx=(4, 0))
-        self.btn_both = tk.Button(
-            btnbar,
-            text="Print both",
+            text="Print labels",
             state=tk.DISABLED,
             command=lambda: (on_reprint_wifi(self.ap_index), on_reprint_login(self.ap_index)),
         )
-        self.btn_both.pack(side=tk.LEFT, padx=(4, 0))
+        self.btn_print.pack(side=tk.LEFT)
         self.btn_restart = tk.Button(
             btnbar,
-            text="Restart this AP",
+            text="Restart",
             state=tk.DISABLED,
             command=lambda: on_restart(self.ap_index),
         )
         self.btn_restart.pack(side=tk.LEFT, padx=(4, 0))
+        self.btn_abort = tk.Button(
+            btnbar,
+            text="Abort",
+            state=tk.DISABLED,
+            command=lambda: on_abort(self.ap_index),
+        )
+        self.btn_abort.pack(side=tk.LEFT, padx=(4, 0))
 
     # -- updates from main thread (called by App.drain_events) --
 
@@ -123,19 +117,17 @@ class APPanel(tk.LabelFrame):
     def set_metadata(self, metadata: dict):
         self.meta_var.set(f"SSID: {metadata.get('ssid', '?')}")
         self.has_metadata = True
-        self.btn_wifi.configure(state=tk.NORMAL)
-        self.btn_login.configure(state=tk.NORMAL)
-        self.btn_both.configure(state=tk.NORMAL)
+        self.btn_print.configure(state=tk.NORMAL)
 
     def set_metadata_cleared(self):
         self.meta_var.set("")
         self.has_metadata = False
-        self.btn_wifi.configure(state=tk.DISABLED)
-        self.btn_login.configure(state=tk.DISABLED)
-        self.btn_both.configure(state=tk.DISABLED)
+        self.btn_print.configure(state=tk.DISABLED)
         self.btn_restart.configure(state=tk.DISABLED)
+        self.btn_abort.configure(state=tk.DISABLED)
 
     def enable_restart(self):
+        self.btn_abort.configure(state=tk.DISABLED)
         if self.has_metadata:
             self.btn_restart.configure(state=tk.NORMAL)
 
@@ -146,3 +138,4 @@ class APPanel(tk.LabelFrame):
 
     def disable_buttons_during_run(self):
         self.btn_restart.configure(state=tk.DISABLED)
+        self.btn_abort.configure(state=tk.NORMAL)
