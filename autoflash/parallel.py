@@ -39,6 +39,11 @@ class Context:
     bootloader_password: str
     printer: PrinterQueue
     timestamp: str
+    # If True, leave PoE enabled on a slot after the worker exits regardless
+    # of outcome. On success this lets the newly-flashed AP keep running for
+    # verification; on failure it lets the user inspect the half-flashed AP
+    # via serial / network for debugging. Toggleable from the GUI.
+    keep_poe_on: bool = False
     # Reuse-image map for "Restart this AP": ap_index -> ClaimedImage that the
     # worker should reuse instead of claiming a new one. Populated by the GUI
     # when the user clicks Restart; the worker pops its entry on start.
@@ -81,6 +86,7 @@ def flash_one(
     log, fh = _setup_ap_logger(ap_index, ctx)
     serial_port = f"/dev/ttyUSB{ap_index}"
     poe_enabled = False
+    success = False
     claimed: images.ClaimedImage | None = None
     reused = False
     try:
@@ -126,6 +132,7 @@ def flash_one(
         # reuse the same ClaimedImage if the user clicks "Restart this AP"
         # (e.g. they want to re-image the same AP after a re-seat). The OS
         # cleans /tmp on next boot; the disk cost is small (~10 MB per slot).
+        success = True
         return True
 
     except Exception as e:
@@ -140,12 +147,18 @@ def flash_one(
         return False
 
     finally:
-        if poe_enabled:
+        if poe_enabled and not ctx.keep_poe_on:
             try:
                 poe.disable_one(ap_index)
                 status(ap_index, "poe_off")
             except Exception:
                 log.exception("failed to disable PoE")
+        elif poe_enabled and ctx.keep_poe_on:
+            log.info(
+                "Leaving PoE enabled (keep_poe_on, %s)",
+                "success" if success else "failure - useful for debugging",
+            )
+            status(ap_index, "poe_kept")
         log.removeHandler(fh)
         fh.close()
 

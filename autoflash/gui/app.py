@@ -92,6 +92,14 @@ class App:
         ).pack(side=tk.LEFT)
         self.btn_start = tk.Button(topbar, text="Start", command=self._on_start)
         self.btn_start.pack(side=tk.RIGHT)
+        self.keep_poe_var = tk.BooleanVar(value=self.ctx.keep_poe_on)
+        self.chk_keep_poe = tk.Checkbutton(
+            topbar,
+            text="Keep PoE on after worker exits",
+            variable=self.keep_poe_var,
+            command=self._on_keep_poe_toggled,
+        )
+        self.chk_keep_poe.pack(side=tk.RIGHT, padx=(0, 8))
 
         # Grid of panels: prefer 4 columns wide.
         cols = min(4, len(self.ap_indices))
@@ -126,6 +134,10 @@ class App:
         ).pack(fill=tk.X, side=tk.BOTTOM)
 
     # -- start/stop flow --
+
+    def _on_keep_poe_toggled(self):
+        self.ctx.keep_poe_on = self.keep_poe_var.get()
+        _log.info("keep_poe_on = %s", self.ctx.keep_poe_on)
 
     def _on_start(self):
         self.btn_start.configure(state=tk.DISABLED)

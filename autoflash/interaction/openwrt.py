@@ -175,10 +175,14 @@ def wait_for_first_boot_done(reader, logger: logging.Logger | None = None):
     log.info("Waiting for first-boot init (uci-defaults + overlay) to finish")
 
     timeout = 240
+    # Split the marker in the shell command so the echoed command line
+    # (`... echo F""IRSTBOOT_DONE`) does NOT itself contain the regex we're
+    # waiting for - only the executed output does. Otherwise we'd match
+    # immediately on the typed-command echo and skip the actual wait.
     one_liner = (
         'while [ -n "$(ls -A /etc/uci-defaults 2>/dev/null)" ] '
         '|| ! mount | grep -q " on /overlay "; do sleep 2; done; '
-        'echo FIRSTBOOT_DONE'
+        'echo F""IRSTBOOT_DONE'
     )
     reader.write(b"\n")
     reader.wait_for_prompt_match(PROMPT_OPENWRT_SHELL, timeout=15)
