@@ -127,6 +127,7 @@ def flash_one(
             logger=log,
         )
 
+        time.sleep(5)
         status(ap_index, "done")
         # Successful flash: keep files in the worker's tmpdir so the GUI can
         # reuse the same ClaimedImage if the user clicks "Restart this AP"
