@@ -55,6 +55,7 @@ class App:
         # Per-AP cached metadata + last claimed image (for reprint + restart).
         self._metadata: dict[int, dict] = {}
         self._last_claim = {}  # ap_index -> ClaimedImage (set on metadata event)
+        self._succeeded: set[int] = set()  # APs that completed successfully
 
         self.executor = ThreadPoolExecutor(
             max_workers=len(ap_indices), thread_name_prefix="flash"
@@ -238,9 +239,11 @@ class App:
                 p.btn_abort.configure(state=tk.DISABLED)
 
     def _on_reset(self):
+        self._restore_unclaimed_images()
         self._futures.clear()
         self._metadata.clear()
         self._last_claim.clear()
+        self._succeeded.clear()
         with self.ctx.reuse_lock:
             self.ctx.reuse.clear()
         for p in self.panels.values():
@@ -283,12 +286,14 @@ class App:
             elif ev.event == "poe_off":
                 p.step_var.set("poe_off")
             elif ev.event == "done":
+                self._succeeded.add(ev.ap)
                 p.set_state("done", "")
             elif ev.event == "failed":
-                # On failure the orchestrator restored the image back to the
-                # pool, so the cached ClaimedImage is stale - drop it so a
-                # Restart picks a fresh image.
-                self._last_claim.pop(ev.ap, None)
+                # On non-abort failure the image was restored to the pool,
+                # so the cached ClaimedImage is stale. On abort the image
+                # is kept for restart.
+                if not ev.fields.get("aborted"):
+                    self._last_claim.pop(ev.ap, None)
                 p.set_state("failed", ev.fields.get("error", ""))
         elif isinstance(ev, WorkerFinished):
             p = self.panels.get(ev.ap)
@@ -326,8 +331,18 @@ class App:
         try:
             self.executor.shutdown(wait=False, cancel_futures=True)
         finally:
+            self._restore_unclaimed_images()
             self.printer_q.stop(drain=False)
             self.root.destroy()
+
+    def _restore_unclaimed_images(self):
+        for ap_index, claim in self._last_claim.items():
+            if ap_index in self._succeeded:
+                continue
+            try:
+                claim.restore()
+            except Exception:
+                _log.exception("failed to restore image on shutdown")
 
     def run(self):
         self.root.after(50, self._drain)

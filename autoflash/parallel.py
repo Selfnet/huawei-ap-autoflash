@@ -134,13 +134,13 @@ def flash_one(
 
     except Exception as e:
         log.exception("flash failed")
-        if claimed is not None:
+        if claimed is not None and not cancel_event.is_set():
             try:
                 claimed.restore()
                 log.info("Restored image %s to pool", claimed.metadata.name)
             except Exception:
                 log.exception("failed to restore image")
-        status(ap_index, "failed", error=repr(e))
+        status(ap_index, "failed", error=repr(e), aborted=cancel_event.is_set())
         return False
 
     finally:
