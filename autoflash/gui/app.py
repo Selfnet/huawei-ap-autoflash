@@ -92,6 +92,10 @@ class App:
         ).pack(side=tk.LEFT)
         self.btn_start = tk.Button(topbar, text="Start", command=self._on_start)
         self.btn_start.pack(side=tk.RIGHT)
+        self.btn_reset = tk.Button(
+            topbar, text="Reset", command=self._on_reset, state=tk.DISABLED
+        )
+        self.btn_reset.pack(side=tk.RIGHT, padx=(0, 4))
         self.keep_poe_var = tk.BooleanVar(value=self.ctx.keep_poe_on)
         self.chk_keep_poe = tk.Checkbutton(
             topbar,
@@ -117,8 +121,8 @@ class App:
             p = APPanel(
                 grid,
                 ap_index=ap,
-                on_reprint_wifi=self._on_reprint_wifi,
-                on_reprint_login=self._on_reprint_login,
+                on_reprint_wifi=self._on_print_wifi,
+                on_reprint_login=self._on_print_login,
                 on_restart=self._on_restart,
             )
             p.grid(row=r, column=c, sticky="nsew", padx=3, pady=3)
@@ -164,11 +168,13 @@ class App:
             self.btn_start.configure(state=tk.NORMAL)
             self.status_var.set("Cancelled")
             return
+        self.ctx.timestamp = make_timestamp()
         self.status_var.set("Flashing...")
         for i in self.ap_indices:
             self._submit(i)
 
     def _submit(self, ap_index: int):
+        self.panels[ap_index].clear_log()
         self.panels[ap_index].set_state("running", "starting")
         self.panels[ap_index].disable_buttons_during_run()
         fut = self.executor.submit(flash_one, ap_index, self.ctx, self._status_cb)
@@ -184,17 +190,17 @@ class App:
 
     # -- button handlers --
 
-    def _on_reprint_wifi(self, ap_index: int):
+    def _on_print_wifi(self, ap_index: int):
         md = self._metadata.get(ap_index)
         if md:
             self.printer_q.print_wifi(md)
-            self.status_var.set(f"Re-queued WiFi label for ap{ap_index}")
+            self.status_var.set(f"Queued WiFi label for ap{ap_index}")
 
-    def _on_reprint_login(self, ap_index: int):
+    def _on_print_login(self, ap_index: int):
         md = self._metadata.get(ap_index)
         if md:
             self.printer_q.print_login(md, self.ctx.bootloader_password)
-            self.status_var.set(f"Re-queued login label for ap{ap_index}")
+            self.status_var.set(f"Queued login label for ap{ap_index}")
 
     def _on_restart(self, ap_index: int):
         # Reuse last claim if we still have valid file paths for this slot
@@ -205,6 +211,20 @@ class App:
             with self.ctx.reuse_lock:
                 self.ctx.reuse[ap_index] = claim
         self._submit(ap_index)
+
+    def _on_reset(self):
+        self._futures.clear()
+        self._metadata.clear()
+        self._last_claim.clear()
+        with self.ctx.reuse_lock:
+            self.ctx.reuse.clear()
+        for p in self.panels.values():
+            p.clear_log()
+            p.set_state("idle")
+            p.set_metadata_cleared()
+        self.btn_reset.configure(state=tk.DISABLED)
+        self.btn_start.configure(state=tk.NORMAL)
+        self.status_var.set("Idle")
 
     # -- event drain --
 
@@ -248,7 +268,20 @@ class App:
             if p:
                 p.enable_restart()
             if all(f.done() for f in self._futures.values()):
-                self.status_var.set("All workers finished")
+                all_ok = all(
+                    f.exception() is None and f.result()
+                    for f in self._futures.values()
+                )
+                if all_ok:
+                    self.status_var.set("All APs flashed successfully")
+                    messagebox.showinfo(
+                        "Batch complete",
+                        "All APs have been flashed successfully.\n\n"
+                        "Click Reset to prepare for a new batch.",
+                    )
+                else:
+                    self.status_var.set("All workers finished (some failed)")
+                self.btn_reset.configure(state=tk.NORMAL)
         elif isinstance(ev, tuple) and ev[0] == "ready_to_confirm":
             self._confirm_and_run()
         elif isinstance(ev, tuple) and ev[0] == "error":

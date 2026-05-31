@@ -88,14 +88,12 @@ def flash_one(
     poe_enabled = False
     success = False
     claimed: images.ClaimedImage | None = None
-    reused = False
     try:
         status(ap_index, "started")
         # Reuse-or-claim
         with ctx.reuse_lock:
             claimed = ctx.reuse.pop(ap_index, None)
         if claimed is not None:
-            reused = True
             log.info("Reusing previously-claimed image %s", claimed.metadata.name)
         else:
             tmp = Path(tempfile.mkdtemp(prefix=f"ap{ap_index}-"))
@@ -104,12 +102,6 @@ def flash_one(
 
         metadata = json.loads(claimed.metadata.read_text())
         status(ap_index, "metadata", metadata=metadata, claim=claimed)
-
-        # Print labels (no-op if printer host is None). Skip on reuse so we
-        # don't spit out duplicate labels for the same AP.
-        if not reused:
-            ctx.printer.print_wifi(metadata)
-            ctx.printer.print_login(metadata, ctx.bootloader_password)
 
         status(ap_index, "poe_on")
         poe.enable_one(ap_index)
