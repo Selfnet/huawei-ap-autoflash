@@ -17,6 +17,7 @@ def flash_autoconf(
     baudrate: int,
     bootloader_password: str,
     labelprinter: str = None,
+    old_uboot_passwords: list[str] | None = None,
 ):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -50,6 +51,7 @@ def flash_autoconf(
                 speed=baudrate,
                 password=bootloader_password,
                 ap_ip=get_free_ip(reserved_ips=[TFTP_IP]),
+                old_uboot_passwords=old_uboot_passwords,
             )
         except Exception:
             claimed.restore()
@@ -87,6 +89,12 @@ def parse_args():
         help="Bootloader Password",
     )
     parser.add_argument(
+        "--old-uboot-password",
+        type=str,
+        nargs="+",
+        help="Up to three current U-Boot passwords to try before changing to --password",
+    )
+    parser.add_argument(
         "-l",
         "--labelprinter",
         type=str,
@@ -102,7 +110,10 @@ def parse_args():
         default=logging.INFO,
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.old_uboot_password and len(args.old_uboot_password) > 3:
+        parser.error("--old-uboot-password accepts at most 3 passwords")
+    return args
 
 
 def main():
@@ -115,6 +126,7 @@ def main():
         baudrate=args.speed,
         bootloader_password=args.password,
         labelprinter=args.labelprinter,
+        old_uboot_passwords=args.old_uboot_password,
     )
 
 

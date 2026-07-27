@@ -9,14 +9,23 @@ PROMPT_PASSWORD = r"Password for uboot cmd line :"
 PROMPT_UBOOT_READY = r"ar7240>"
 PROMPT_NEW_PASSWORD = r"New password:"
 PROMPT_CONFIRM_PASSWORD = r"Confirm  password:"
+PROMPT_CONFIRM_OLD_PASSWORD = r"Confirm old password\s*:"
+PROMPT_ENTER_NEW_PASSWORD = r"Please enter new password\s*:"
+PROMPT_CONFIRM_NEW_PASSWORD = r"Please confirm new password\s*:"
+PASSWORD_CHANGED = r"The password is changed successfully\."
+PASSWORD_WRONG = r"Password is wrong, System will reboot"
 
 
 class WrongBootloaderPasswordError(Exception):
-    """Raised when the AP re-prompts for the bootloader password after we
-    sent it - meaning the password we used is wrong."""
+    """Raised when none of the supplied bootloader passwords works."""
 
 
-def ensure_ready(reader, password, logger: logging.Logger | None = None):
+def ensure_ready(
+    reader,
+    passwords: list[str],
+    new_password: str,
+    logger: logging.Logger | None = None,
+) -> str | None:
     """
     The script can be started at two points in time:
         1. Before the AP is powered on. Then, we have to stop auto-boot AND enter the password
@@ -26,7 +35,7 @@ def ensure_ready(reader, password, logger: logging.Logger | None = None):
     """
     log = logger or logging.getLogger(__name__)
     reader.write(b"\n")
-    password_sent = False
+    password_index = 0
     for _ in range(8):
         m = reader.wait_for_prompt_match(
             "|".join(
@@ -37,6 +46,7 @@ def ensure_ready(reader, password, logger: logging.Logger | None = None):
                     PROMPT_SKIP_BUS_TEST,
                     PROMPT_NEW_PASSWORD,
                     PROMPT_CONFIRM_PASSWORD,
+                    PASSWORD_WRONG,
                 ]
             ),
         )
@@ -47,25 +57,26 @@ def ensure_ready(reader, password, logger: logging.Logger | None = None):
             time.sleep(0.2)
             reader.write(b"f")
         elif m == PROMPT_PASSWORD:
-            if password_sent:
-                # AP re-prompted for the password after we sent it: the
-                # password we used is wrong. Don't keep retrying - the AP
-                # locks out after a few wrong attempts.
+            if password_index == len(passwords):
                 reader.log_buffer_as_error()
                 raise WrongBootloaderPasswordError(
-                    "AP re-prompted for the bootloader password after we "
-                    "sent it - the password is wrong. Pass the correct one "
-                    "with -p / --password."
+                    "None of the supplied U-Boot passwords worked. The AP "
+                    "allows at most three attempts before rebooting."
                 )
             time.sleep(0.2)
-            reader.write(f"{password}\n".encode("utf-8"))
-            password_sent = True
+            reader.write(f"{passwords[password_index]}\n".encode("utf-8"))
+            password_index += 1
         elif m == PROMPT_NEW_PASSWORD or m == PROMPT_CONFIRM_PASSWORD:
             time.sleep(0.2)
-            reader.write(f"{password}\n".encode("utf-8"))
+            reader.write(f"{new_password}\n".encode("utf-8"))
         elif m == PROMPT_UBOOT_READY:
             log.info("U-Boot ready")
-            return
+            return passwords[password_index - 1] if password_index else None
+        elif m == PASSWORD_WRONG:
+            reader.log_buffer_as_error()
+            raise WrongBootloaderPasswordError(
+                "None of the supplied U-Boot passwords worked. The AP is rebooting."
+            )
         else:
             reader.log_buffer_as_error()
             raise Exception("Unexpected prompt")
@@ -77,6 +88,27 @@ def send_uboot_cmd(reader, cmd: str, wait_for_prompt=True):
     reader.write(f"{cmd}\n".encode("utf-8"))
     if wait_for_prompt:
         reader.wait_for_prompt_match(PROMPT_UBOOT_READY)
+
+
+def change_password(
+    reader,
+    old_password: str,
+    new_password: str,
+    logger: logging.Logger | None = None,
+):
+    log = logger or logging.getLogger(__name__)
+    log.info("Changing U-Boot password")
+    reader.write(b"passwd\n")
+    reader.wait_for_prompt_match(PROMPT_CONFIRM_OLD_PASSWORD)
+    reader.write(f"{old_password}\n".encode("utf-8"))
+    reader.wait_for_prompt_match(PROMPT_ENTER_NEW_PASSWORD)
+    reader.write(f"{new_password}\n".encode("utf-8"))
+    reader.wait_for_prompt_match(PROMPT_CONFIRM_NEW_PASSWORD)
+    reader.write(f"{new_password}\n".encode("utf-8"))
+    reader.wait_for_prompt_match(
+        rf"{PASSWORD_CHANGED}\s*{PROMPT_UBOOT_READY}"
+    )
+    log.info("U-Boot password changed")
 
 
 def configure_ramboot(

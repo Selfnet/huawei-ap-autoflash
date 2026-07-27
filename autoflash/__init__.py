@@ -20,6 +20,7 @@ def run_autoflash(
     ap_ip=OPENWRT_DEFAULT_LAN_IP,
     logger: logging.Logger | None = None,
     cancel_event: threading.Event | None = None,
+    old_uboot_passwords: list[str] | None = None,
 ):
     log = logger or logging.getLogger(__name__)
     debug = log.isEnabledFor(logging.DEBUG)
@@ -27,7 +28,10 @@ def run_autoflash(
         reader = SerialReader(ser, logger=log, cancel_event=cancel_event)
 
         # Ramboot
-        uboot.ensure_ready(reader, password, logger=log)
+        candidates = old_uboot_passwords or [password]
+        matched_password = uboot.ensure_ready(reader, candidates, password, logger=log)
+        if old_uboot_passwords is not None and matched_password is not None:
+            uboot.change_password(reader, matched_password, password, logger=log)
         uboot.configure_ramboot(reader, TFTP_IP, ap_ip, ramboot_file_name, logger=log)
         uboot.run_ramboot(reader, logger=log)
 

@@ -68,6 +68,7 @@ python autoflash.py <ramboot-filename> [options]
 - `--port PORT`: Serial port device (default: `/dev/ttyUSB0`)
 - `--speed BAUD`: Serial baudrate (default: `9600`)
 - `-p, --password PASS`: U-Boot bootloader password (default: `admin@huawei.com`)
+- `--old-uboot-password PASS [PASS ...]`: Try up to three current passwords, then change the matching one to `--password`
 - `--ap-ip IP`: IP address to assign to the AP (default: `192.168.1.1`)
 - `-v, --verbose`: Enable verbose logging
 - `-d, --debug`: Enable debug logging with serial output
@@ -110,6 +111,7 @@ This mode:
 - `--port PORT`: Serial port device (default: `/dev/ttyUSB0`)
 - `-s, --speed BAUD`: Serial baudrate (default: `9600`)
 - `-p, --password PASS`: U-Boot bootloader password (default: `dasuboot`)
+- `--old-uboot-password PASS [PASS ...]`: Try up to three current passwords, then change the matching one to `--password`
 - `-l, --labelprinter HOST`: Hostname/IP of Brother QL label printer (if not set, no labels printed)
 - `-d, --debug`: Enable debug logging with serial output
 

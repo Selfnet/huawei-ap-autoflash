@@ -37,6 +37,12 @@ def parse_args():
         help="Bootloader Password",
     )
     parser.add_argument(
+        "--old-uboot-password",
+        type=str,
+        nargs="+",
+        help="Up to three current U-Boot passwords to try before changing to --password",
+    )
+    parser.add_argument(
         "--ap-ip",
         type=ipaddress.IPv4Address,
         default=OPENWRT_DEFAULT_LAN_IP,
@@ -60,7 +66,10 @@ def parse_args():
         const=logging.INFO,
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.old_uboot_password and len(args.old_uboot_password) > 3:
+        parser.error("--old-uboot-password accepts at most 3 passwords")
+    return args
 
 
 def main():
@@ -74,6 +83,7 @@ def main():
         args.speed,
         args.password,
         args.ap_ip,
+        old_uboot_passwords=args.old_uboot_password,
     )
 
     if args.loglevel == logging.DEBUG:

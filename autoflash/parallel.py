@@ -39,6 +39,7 @@ class Context:
     bootloader_password: str
     printer: PrinterQueue
     timestamp: str
+    old_uboot_passwords: list[str] | None = None
     # If True, leave PoE enabled on a slot after the worker exits regardless
     # of outcome. On success this lets the newly-flashed AP keep running for
     # verification; on failure it lets the user inspect the half-flashed AP
@@ -121,6 +122,7 @@ def flash_one(
             ap_ip=ap_ip,
             logger=log,
             cancel_event=cancel_event,
+            old_uboot_passwords=ctx.old_uboot_passwords,
         )
 
         time.sleep(5)

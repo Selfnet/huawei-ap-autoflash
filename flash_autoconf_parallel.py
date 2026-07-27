@@ -44,6 +44,12 @@ def parse_args():
         help="Bootloader password (default dasuboot)",
     )
     p.add_argument(
+        "--old-uboot-password",
+        type=str,
+        nargs="+",
+        help="Up to three current U-Boot passwords to try before changing to --password",
+    )
+    p.add_argument(
         "-l",
         "--labelprinter",
         type=str,
@@ -59,7 +65,10 @@ def parse_args():
         default=logging.INFO,
         dest="loglevel",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    if args.old_uboot_password and len(args.old_uboot_password) > 3:
+        p.error("--old-uboot-password accepts at most 3 passwords")
+    return args
 
 
 def status_print(ap, event, **fields):
@@ -91,6 +100,7 @@ def main():
         bootloader_password=args.password,
         printer=printer_q,
         timestamp=make_timestamp(),
+        old_uboot_passwords=args.old_uboot_password,
     )
 
     print(f"Will flash APs {ap_indices} in parallel.")

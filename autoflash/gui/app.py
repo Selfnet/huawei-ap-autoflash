@@ -36,6 +36,7 @@ class App:
         baudrate: int,
         bootloader_password: str,
         labelprinter_host: str | None,
+        old_uboot_passwords: list[str] | None = None,
     ):
         self.ap_indices = ap_indices
         self.events: queue.Queue = queue.Queue()
@@ -49,6 +50,7 @@ class App:
             bootloader_password=bootloader_password,
             printer=self.printer_q,
             timestamp=make_timestamp(),
+            old_uboot_passwords=old_uboot_passwords,
         )
         self.ctx.logs_dir.mkdir(parents=True, exist_ok=True)
 
