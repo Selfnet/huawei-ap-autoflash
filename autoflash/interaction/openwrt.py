@@ -12,7 +12,7 @@ PROMPT_SYSUPGRADE_COMPLETE = r"Rebooting system..."
 
 def wait_for_shell_ready(reader, logger: logging.Logger | None = None):
     log = logger or logging.getLogger(__name__)
-    for _ in range(100):
+    for _ in range(60 * 5):
         reader.write(b"\n")
         time.sleep(1)
         chunk = reader.read_available()
