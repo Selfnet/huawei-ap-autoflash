@@ -102,5 +102,5 @@ def render_login(ip, password, bootloader_pw):
 if __name__ == "__main__":
     imgsurf = render_wifi("stuttgart-EX", "Faem3heiweetae6e")
     imgsurf.write_to_png("out.png")
-    imgsurf = render_login("192.168.0.1", "eeG1phoo", "dasuboot")
+    imgsurf = render_login("192.168.1.1", "eeG1phoo", "dasuboot")
     imgsurf.write_to_png("out2.png")

@@ -89,7 +89,7 @@ class PrinterQueue:
             )
         elif job.kind == "login":
             surf = labels.render_login(
-                ip="192.168.0.1",
+                ip="192.168.1.1",
                 password=job.metadata["root_password"],
                 bootloader_pw=job.bootloader_pw,
             )

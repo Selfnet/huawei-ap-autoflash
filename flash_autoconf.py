@@ -34,7 +34,7 @@ def flash_autoconf(
             printer.print_to_ip(wifi_label, labelprinter)
 
             login_label = labels.render_login(
-                ip="192.168.0.1",
+                ip="192.168.1.1",
                 password=metadata["root_password"],
                 bootloader_pw=bootloader_password,
             )
