@@ -2,6 +2,9 @@ openwrt.bin
 labelprinter/*.png
 test.py
 *.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode

@@ -139,6 +139,62 @@ python flash_autoconf.py -i /path/to/images -l printer.local
 python flash_autoconf.py -i /path/to/images --port /dev/ttyUSB1 -p mypassword
 ```
 
+### Flash GUI and persistent history
+
+```bash
+uv run python flash_autoconf_gui.py -i /path/to/images -n 4
+```
+
+The GUI and `flash_autoconf_parallel.py` write structured results to
+`flash-history.sqlite` in the working directory. Use `--history-db PATH` to
+choose another location. This is separate from the IP allocator's `ips.sqlite`
+and the per-port serial logs configured with `--logs-dir`.
+
+`flash_attempts` contains one row per attempt, including retries and restarts:
+
+- Start, update, and finish timestamps in UTC, batch ID, port index, state, and last stage.
+- Original image filename, claimed path, SHA-256, size, metadata filename, raw metadata,
+  and every JSON metadata entry in `metadata_json`.
+- TFTP server IP, initial OpenWrt IP, and allocated `flash_ip`, used for both U-Boot
+  ramboot and the sysupgrade transfer.
+- Observed interface MAC addresses and IPv4/IPv6 addresses, grouped by `ramboot`
+  and `installed` phases in `network_json`. Collection is best-effort; unavailable
+  addresses are not guessed.
+- Serial device, baudrate, switch host/port, log path, bootloader passwords,
+  printer host, PoE policy and final PoE state, and failure type/message.
+
+`flash_events` records timestamped stage changes and structured details, including
+password changes, network observations, image reuse/restoration, and PoE cleanup
+errors. It does not contain serial output. A PoE shutdown error is recorded
+separately and does not change a successful flash into a failed flash.
+
+States are `running`, `succeeded`, `failed`, `aborted`, and `interrupted`. Success is
+recorded only after sysupgrade and first-boot initialization complete. An attempt
+left `running` without `finished_at` means no final result was recorded, for example
+after a crash or power loss; it must not be treated as successful. Existing history
+is never cleared on GUI Reset or startup. The older `autoflash.py` and
+`flash_autoconf.py` entrypoints do not write this history.
+
+**The database contains plaintext credentials**, including WiFi/root passwords
+from the image metadata and configured/tried bootloader passwords. Newly created
+database files have owner-only permissions (`0600`); existing file permissions are
+left unchanged. Keep backups private too. History is not automatically rotated or
+deleted, so back up and manage its retention separately from temporary image files.
+
+Example queries:
+
+```sql
+SELECT id, started_at, ap_index, state, stage, image_name, flash_ip, error_message
+FROM flash_attempts ORDER BY started_at DESC;
+
+SELECT image_name, json_extract(metadata_json, '$.ssid') AS ssid,
+       json_extract(network_json, '$.installed."br-lan".mac') AS lan_mac
+FROM flash_attempts WHERE state = 'succeeded';
+
+SELECT occurred_at, event, details_json FROM flash_events
+WHERE attempt_id = '<attempt-id>' ORDER BY id;
+```
+
 ### Using Justfile
 
 If you have [just](https://github.com/casey/just) installed, you can use the provided shortcuts:

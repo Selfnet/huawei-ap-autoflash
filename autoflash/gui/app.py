@@ -37,6 +37,7 @@ class App:
         bootloader_password: str,
         labelprinter_host: str | None,
         old_uboot_passwords: list[str] | None = None,
+        history_db: Path = Path("flash-history.sqlite"),
     ):
         self.ap_indices = ap_indices
         self.events: queue.Queue = queue.Queue()
@@ -51,6 +52,7 @@ class App:
             printer=self.printer_q,
             timestamp=make_timestamp(),
             old_uboot_passwords=old_uboot_passwords,
+            history_db=history_db,
         )
         self.ctx.logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -91,6 +93,7 @@ class App:
             topbar,
             text=f"{n} APs - images: {self.ctx.images_dir} - "
             f"logs: {self.ctx.logs_dir} - "
+            f"history: {self.ctx.history.path} - "
             f"printer: {self.printer_q.host or '(none)'}",
         ).pack(side=tk.LEFT)
         self.btn_start = tk.Button(topbar, text="Start", command=self._on_start)

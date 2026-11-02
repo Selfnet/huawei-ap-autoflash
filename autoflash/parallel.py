@@ -16,6 +16,7 @@ emitted via an optional callback so a GUI (or CLI driver) can react.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import tempfile
@@ -26,7 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import TFTP_IP, run_autoflash, images, poe
+from . import OPENWRT_DEFAULT_LAN_IP, TFTP_IP, run_autoflash, images, poe
+from .history import FlashHistory
 from .ips import get_free_ip
 from .printer_queue import PrinterQueue
 
@@ -51,6 +53,11 @@ class Context:
     reuse: dict[int, images.ClaimedImage] = field(default_factory=dict)
     reuse_lock: threading.Lock = field(default_factory=threading.Lock)
     cancel_events: dict[int, threading.Event] = field(default_factory=dict)
+    history_db: Path = Path("flash-history.sqlite")
+    history: FlashHistory = field(init=False)
+
+    def __post_init__(self):
+        self.history = FlashHistory(self.history_db)
 
 
 # Status callback signature: (ap_index, event_name, **fields)
@@ -88,15 +95,61 @@ def flash_one(
     log, fh = _setup_ap_logger(ap_index, ctx)
     serial_port = f"/dev/ttyUSB{ap_index}"
     poe_enabled = False
+    poe_state = "unknown"
     success = False
     claimed: images.ClaimedImage | None = None
     cancel_event = threading.Event()
     ctx.cancel_events[ap_index] = cancel_event
+    attempt_id = None
+    outcome = "interrupted"
+    error = None
+    network = {}
+
+    def record(event, *, changes=None, **details):
+        ctx.history.record(attempt_id, event, changes=changes, **details)
+
+    def record_cleanup(event, **details):
+        if attempt_id is not None:
+            try:
+                record(event, **details)
+            except Exception:
+                log.exception("failed to update flash history during cleanup")
+
+    def progress(event, **details):
+        changes = {"stage": event}
+        if event == "network":
+            network[details["phase"]] = details["interfaces"]
+            changes = {"network_json": json.dumps(network)}
+        elif event == "network_unavailable":
+            changes = {}
+        record(event, changes=changes, **details)
+
     try:
-        status(ap_index, "started")
+        attempt_id = ctx.history.start(
+            batch_id=ctx.timestamp,
+            ap_index=ap_index,
+            serial_port=serial_port,
+            baudrate=ctx.baudrate,
+            switch_host=poe.SWITCH_HOST,
+            switch_port=f"ge-0/0/{ap_index}",
+            images_dir=str(ctx.images_dir.resolve()),
+            log_path=str((ctx.logs_dir / f"ap{ap_index}-{ctx.timestamp}.log").resolve()),
+            ramboot_image="ramboot.bin",
+            tftp_ip=str(TFTP_IP),
+            openwrt_default_ip=str(OPENWRT_DEFAULT_LAN_IP),
+            config_json=json.dumps({
+                "bootloader_password": ctx.bootloader_password,
+                "old_uboot_passwords": ctx.old_uboot_passwords,
+                "labelprinter_host": ctx.printer.host,
+                "keep_poe_on": ctx.keep_poe_on,
+            }),
+        )
+        status(ap_index, "started", attempt_id=attempt_id)
         # Reuse-or-claim
+        progress("claiming_image")
         with ctx.reuse_lock:
             claimed = ctx.reuse.pop(ap_index, None)
+        reused = claimed is not None
         if claimed is not None:
             log.info("Reusing previously-claimed image %s", claimed.metadata.name)
         else:
@@ -104,14 +157,43 @@ def flash_one(
             claimed = images.claim(ctx.images_dir, tmp)
             log.info("Claimed image %s", claimed.metadata.name)
 
-        metadata = json.loads(claimed.metadata.read_text())
+        record(
+            "image_claimed",
+            changes={
+                "image_name": claimed.sysupgrade.name,
+                "image_path": str(claimed.sysupgrade.resolve()),
+                "metadata_filename": claimed.original_name,
+            },
+            reused=reused,
+        )
+        progress("reading_metadata")
+        raw_metadata = claimed.metadata.read_text()
+        record("metadata_read", changes={"metadata_raw": raw_metadata})
+        metadata = json.loads(raw_metadata)
+        record("metadata", changes={"metadata_json": json.dumps(metadata)})
+        progress("hashing_image")
+        digest = hashlib.sha256()
+        with claimed.sysupgrade.open("rb") as image:
+            for chunk in iter(lambda: image.read(1024 * 1024), b""):
+                digest.update(chunk)
+        record(
+            "image_identified",
+            changes={
+                "image_sha256": digest.hexdigest(),
+                "image_size_bytes": claimed.sysupgrade.stat().st_size,
+            },
+        )
         status(ap_index, "metadata", metadata=metadata, claim=claimed)
 
+        progress("enabling_poe")
         status(ap_index, "poe_on")
         poe.enable_one(ap_index)
         poe_enabled = True
+        poe_state = "on"
+        record("poe_on", changes={"poe_state": "on"})
 
         ap_ip = get_free_ip(reserved_ips=[TFTP_IP])
+        record("ip_allocated", changes={"flash_ip": str(ap_ip)}, flash_ip=str(ap_ip))
         status(ap_index, "flashing", ap_ip=str(ap_ip))
         run_autoflash(
             ramboot_file_name="ramboot.bin",
@@ -123,44 +205,82 @@ def flash_one(
             logger=log,
             cancel_event=cancel_event,
             old_uboot_passwords=ctx.old_uboot_passwords,
+            progress=progress,
         )
 
         time.sleep(5)
-        status(ap_index, "done")
         # Successful flash: keep files in the worker's tmpdir so the GUI can
         # reuse the same ClaimedImage if the user clicks "Restart this AP"
         # (e.g. they want to re-image the same AP after a re-seat). The OS
         # cleans /tmp on next boot; the disk cost is small (~10 MB per slot).
         success = True
-        return True
+        outcome = "succeeded"
 
     except Exception as e:
+        error = e
+        outcome = "aborted" if cancel_event.is_set() else "failed"
         log.exception("flash failed")
+        record_cleanup("flash_error", error_type=type(e).__name__, error_message=str(e))
         if claimed is not None and not cancel_event.is_set():
             try:
                 claimed.restore()
                 log.info("Restored image %s to pool", claimed.metadata.name)
-            except Exception:
+                record_cleanup("image_restored")
+            except Exception as restore_error:
                 log.exception("failed to restore image")
+                record_cleanup(
+                    "image_restore_failed",
+                    error_type=type(restore_error).__name__,
+                    error_message=str(restore_error),
+                )
         status(ap_index, "failed", error=repr(e), aborted=cancel_event.is_set())
-        return False
+
+    except BaseException as e:
+        error = e
+        raise
 
     finally:
-        if poe_enabled and not ctx.keep_poe_on:
-            try:
-                poe.disable_one(ap_index)
-                status(ap_index, "poe_off")
-            except Exception:
-                log.exception("failed to disable PoE")
-        elif poe_enabled and ctx.keep_poe_on:
-            log.info(
-                "Leaving PoE enabled (keep_poe_on, %s)",
-                "success" if success else "failure - useful for debugging",
-            )
-            status(ap_index, "poe_kept")
-        ctx.cancel_events.pop(ap_index, None)
-        log.removeHandler(fh)
-        fh.close()
+        try:
+            if poe_enabled and not ctx.keep_poe_on:
+                try:
+                    poe.disable_one(ap_index)
+                except Exception as e:
+                    poe_state = "unknown"
+                    log.exception("failed to disable PoE")
+                    record_cleanup(
+                        "poe_off_failed",
+                        changes={"poe_state": "unknown"},
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                    )
+                else:
+                    poe_state = "off"
+                    record_cleanup("poe_off", changes={"poe_state": "off"})
+                    status(ap_index, "poe_off")
+            elif poe_enabled and ctx.keep_poe_on:
+                log.info(
+                    "Leaving PoE enabled (keep_poe_on, %s)",
+                    "success" if success else "failure - useful for debugging",
+                )
+                record_cleanup("poe_kept", keep_poe_on=True)
+                status(ap_index, "poe_kept")
+            if attempt_id is not None:
+                try:
+                    ctx.history.finish(attempt_id, outcome, error, poe_state=poe_state)
+                except Exception as e:
+                    log.exception("failed to save final flash result")
+                    status(
+                        ap_index, "failed", error=f"History update failed: {e}", aborted=False
+                    )
+                    raise
+        finally:
+            ctx.cancel_events.pop(ap_index, None)
+            log.removeHandler(fh)
+            fh.close()
+
+    if success:
+        status(ap_index, "done")
+    return success
 
 
 def run_parallel(

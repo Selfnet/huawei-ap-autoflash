@@ -52,6 +52,10 @@ def parse_args():
     )
     p.add_argument("--logs-dir", type=Path, default=Path("logs"))
     p.add_argument(
+        "--history-db", type=Path, default=Path("flash-history.sqlite"),
+        help="SQLite flash history, including image metadata and passwords",
+    )
+    p.add_argument(
         "-d",
         "--debug",
         action="store_const",
@@ -89,6 +93,7 @@ def main():
         bootloader_password=args.password,
         labelprinter_host=args.labelprinter,
         old_uboot_passwords=args.old_uboot_password,
+        history_db=args.history_db,
     )
     app.run()
 

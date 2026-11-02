@@ -58,6 +58,10 @@ def parse_args():
     )
     p.add_argument("--logs-dir", type=Path, default=Path("logs"))
     p.add_argument(
+        "--history-db", type=Path, default=Path("flash-history.sqlite"),
+        help="SQLite flash history, including image metadata and passwords",
+    )
+    p.add_argument(
         "-d",
         "--debug",
         action="store_const",
@@ -101,12 +105,14 @@ def main():
         printer=printer_q,
         timestamp=make_timestamp(),
         old_uboot_passwords=args.old_uboot_password,
+        history_db=args.history_db,
     )
 
     print(f"Will flash APs {ap_indices} in parallel.")
     print(f"Serial ports: {[f'/dev/ttyUSB{i}' for i in ap_indices]}")
     print(f"Switch ports: {[f'ge-0/0/{i}' for i in ap_indices]}")
     print(f"Logs in: {args.logs_dir}/")
+    print(f"Flash history: {ctx.history.path}")
     input("Connect APs and press Enter to begin... ")
 
     try:

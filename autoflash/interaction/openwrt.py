@@ -83,6 +83,30 @@ def _capture_shell_cmd(reader, cmd: str, timeout: float = 30) -> str:
     return reader.buffer
 
 
+def read_network_info(reader) -> dict:
+    reader.reset_buffer()
+    reader.write(b'ip -o link show; ip -o addr show; echo N""ETWORK_INFO_DONE\n')
+    reader.wait_for_prompt_match(
+        r"\bNETWORK_INFO_DONE\b[\s\S]*" + PROMPT_OPENWRT_SHELL, timeout=15
+    )
+    output = reader.buffer
+    interfaces = {}
+    for line in output.splitlines():
+        match = re.match(r"\s*\d+:\s+(\S+?)(?:@\S+)?(?::\s|\s)", line)
+        if not match:
+            continue
+        name = match.group(1)
+        info = interfaces.setdefault(name, {})
+        mac = re.search(r"\blink/ether\s+([0-9a-fA-F:]{17})\b", line)
+        if mac:
+            info["mac"] = mac.group(1).lower()
+        address = re.search(r"\b(inet6?)\s+([0-9a-fA-F.:]+/\d+)", line)
+        if address:
+            family = "ipv4" if address.group(1) == "inet" else "ipv6"
+            info.setdefault(family, []).append(address.group(2))
+    return interfaces
+
+
 def set_lan_ip(reader, ip: ipaddress.IPv4Address, logger: logging.Logger | None = None):
     log = logger or logging.getLogger(__name__)
     log.info(f"Setting LAN IP to {ip}/24")
@@ -127,6 +151,7 @@ def flash_openwrt(
     sysupgrade_file: str,
     logger: logging.Logger | None = None,
     debug: bool = False,
+    progress=None,
 ):
     log = logger or logging.getLogger(__name__)
     log.info("Copying sysupgrade image to AP using scp")
@@ -154,6 +179,8 @@ def flash_openwrt(
 
     sysupgrade_file_name = os.path.basename(sysupgrade_file)
     log.info(f"Running sysupgrade with OpenWrt image {sysupgrade_file_name}")
+    if progress is not None:
+        progress("running_sysupgrade", image_name=sysupgrade_file_name, options=options)
     reader.write(f"sysupgrade {options} /tmp/{sysupgrade_file_name}\n".encode("utf-8"))
 
 
